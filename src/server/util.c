@@ -1,8 +1,4 @@
 #include "../../include/util.h"
-#include <arpa/inet.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 
 const char* printFamily(struct addrinfo* aip) {
     switch (aip->ai_family) {

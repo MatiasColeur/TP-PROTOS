@@ -12,6 +12,9 @@
         "ratio": "c",
         "tuple": "c",
         "utility": "c",
-        "variant": "c"
+        "variant": "c",
+        "util.h": "c",
+        "logger.h": "c",
+        "stdlib.h": "c"
     }
 }
