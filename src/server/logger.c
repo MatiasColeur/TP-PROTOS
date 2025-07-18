@@ -1,0 +1,20 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
+#include "../../include/logger.h"
+
+void logAccess(char * username, char * password, char * hostname, int port) {
+    FILE * logFile = fopen("log/access.txt", "a");
+    if (!logFile) {
+        perror("[ERR] Coldn't open the log file");
+        return;
+    }
+
+    time_t now = time(NULL);
+    char timestamp[64];
+    strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", localtime(&now));
+
+    fprintf(logFile, "[%s] - %s:%s - Connected to %s port %d\n", timestamp, username, password, hostname, port);
+    fclose(logFile);
+}
+
