@@ -4,4 +4,4 @@ COMPILERFLAGS=-Wall -std=c11 -pedantic -fsanitize=address -g -pthread -Wno-point
 
 LDFLAGS=-lm
 
-CHECK_INCLUDE_PARTH=/opt/homebrew/include/check.h
+CHECK_INCLUDE_PATH=/opt/homebrew/include/check.h
