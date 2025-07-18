@@ -1,0 +1,17 @@
+{
+    "files.associations": {
+        "netutils.h": "c",
+        "parser.h": "c",
+        "parser_utils.h": "c",
+        "selector.h": "c",
+        "stm.h": "c",
+        "array": "c",
+        "bitset": "c",
+        "iterator": "c",
+        "memory": "c",
+        "ratio": "c",
+        "tuple": "c",
+        "utility": "c",
+        "variant": "c"
+    }
+}

@@ -3,21 +3,29 @@ include ./Makefile.inc
 SERVER_SOURCES=$(wildcard src/server/*.c)
 CLIENT_SOURCES=$(wildcard src/client/*.c)
 SHARED_SOURCES=$(wildcard src/shared/*.c)
+TEST_SOURCES=$(wildcard src/shared/*_test.c)
 
 OBJECTS_FOLDER=./obj
 OUTPUT_FOLDER=./bin
 
 SERVER_OBJECTS=$(SERVER_SOURCES:src/%.c=obj/%.o)
 CLIENT_OBJECTS=$(CLIENT_SOURCES:src/%.c=obj/%.o)
-SHARED_OBJECTS=$(SHARED_SOURCES:src/%.c=obj/%.o)
+SHARED_OBJECTS=$(filter-out $(TEST_SOURCES:src/%.c=),$(SHARED_SOURCES:src/%.c=obj/%.o))
+TEST_OBJECTS=$(TEST_SOURCES:src/%.c=obj/%.o)
 
 SERVER_OUTPUT_FILE=$(OUTPUT_FOLDER)/socks5
 CLIENT_OUTPUT_FILE=$(OUTPUT_FOLDER)/client
+TEST_OUTPUT_FILE=$(OUTPUT_FOLDER)/tests
+
+# Ruta de Homebrew (puede ser /opt/homebrew o /usr/local en Intel Macs)
+CHECK_INCLUDE_PATH=/opt/homebrew/include
+CHECK_LIB_PATH=/opt/homebrew/lib
 
 all: server client
 
 server: $(SERVER_OUTPUT_FILE)
 client: $(CLIENT_OUTPUT_FILE)
+test: $(TEST_OUTPUT_FILE)
 
 $(SERVER_OUTPUT_FILE): $(SERVER_OBJECTS) $(SHARED_OBJECTS)
 	mkdir -p $(OUTPUT_FOLDER)
@@ -27,14 +35,19 @@ $(CLIENT_OUTPUT_FILE): $(CLIENT_OBJECTS) $(SHARED_OBJECTS)
 	mkdir -p $(OUTPUT_FOLDER)
 	$(COMPILER) $(COMPILERFLAGS) $(LDFLAGS) $(CLIENT_OBJECTS) $(SHARED_OBJECTS) -o $(CLIENT_OUTPUT_FILE)
 
-clean:
-	rm -rf $(OUTPUT_FOLDER) 
-	rm -rf $(OBJECTS_FOLDER)
+$(TEST_OUTPUT_FILE): $(TEST_OBJECTS) $(SHARED_OBJECTS)
+	mkdir -p $(OUTPUT_FOLDER)
+	$(COMPILER) $(COMPILERFLAGS) -I$(CHECK_INCLUDE_PATH) -L$(CHECK_LIB_PATH) \
+		$(TEST_OBJECTS) $(SHARED_OBJECTS) -o $(TEST_OUTPUT_FILE) -lcheck
 
 obj/%.o: src/%.c
 	mkdir -p $(OBJECTS_FOLDER)/server
 	mkdir -p $(OBJECTS_FOLDER)/client
 	mkdir -p $(OBJECTS_FOLDER)/shared
-	$(COMPILER) $(COMPILERFLAGS) -c $< -o $@
+	$(COMPILER) $(COMPILERFLAGS) -I$(CHECK_INCLUDE_PATH) -c $< -o $@
 
-.PHONY: all server client clean
+clean:
+	rm -rf $(OUTPUT_FOLDER) 
+	rm -rf $(OBJECTS_FOLDER)
+
+.PHONY: all server client clean test
