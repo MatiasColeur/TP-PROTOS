@@ -17,10 +17,6 @@ SERVER_OUTPUT_FILE=$(OUTPUT_FOLDER)/socks5
 CLIENT_OUTPUT_FILE=$(OUTPUT_FOLDER)/client
 TEST_OUTPUT_FILE=$(OUTPUT_FOLDER)/tests
 
-# Ruta de Homebrew (puede ser /opt/homebrew o /usr/local en Intel Macs)
-CHECK_INCLUDE_PATH=/opt/homebrew/include
-CHECK_LIB_PATH=/opt/homebrew/lib
-
 all: server client
 
 server: $(SERVER_OUTPUT_FILE)
