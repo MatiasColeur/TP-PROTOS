@@ -1,0 +1,1 @@
+[2025-07-18 15:59:31] - gonzalo:clave123 - Connected to 2600:1406:3a00:21::173e:2e65 port 443
