@@ -491,3 +491,25 @@ int handleUsernamePasswordAuth(int clientSocket, char * username, char * passwor
 
 
 }
+
+void socks5_accept(struct selector_key *key) {
+    struct sockaddr_storage client_addr;
+    socklen_t client_len = sizeof(client_addr);
+    int client_fd = accept(key->fd, (struct sockaddr*)&client_addr, &client_len);
+    if(client_fd < 0) {
+        perror("accept");
+        return;
+    }
+    printf("[INF] Nueva conexión\n");
+
+    selector_fd_set_nio(client_fd);
+
+    const struct fd_handler client_handler = {
+        .handle_read = socks5_read,
+        .handle_write = socks5_write,
+        .handle_block = NULL,
+        .handle_close = socks5_close,
+    };
+
+    selector_register(key->s, client_fd, &client_handler, OP_READ, client_struct_pointer);
+}

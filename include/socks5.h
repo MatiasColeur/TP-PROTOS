@@ -29,5 +29,6 @@ int handleConnectAndReply(int clientSocket, struct addrinfo** addressConnectTo, 
 int handleConnectionData(int clientSocket, int remoteSocket);
 int handleUsernamePasswordAuth(int clientSocket, char * username, char * password, size_t maxLen);
 bool authenticateUser(int clientSocket);
+void socks5_accept(struct selector_key*key);
 
 #endif

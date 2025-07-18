@@ -7,7 +7,9 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <signal.h>
 
+#include "../../include/selector.h"
 #include "../../include/socks5.h"
 #include "../../include/util.h"
 
@@ -54,27 +56,48 @@ int main(int argc, const char* argv[]) {
     } else
         perror("[WRN] Failed to getsockname()");
 
+
+    struct selector_init conf = {
+        .signal = SIGALRM,    
+        .select_timeout = { .tv_sec = 10, .tv_nsec = 0 } 
+    };
+
+    if(selector_init(&conf) != SELECTOR_SUCCESS) {
+        fprintf(stderr, "Error init selector\n");
+        exit(1);
+    }
+
+    fd_selector selector = selector_new(500);  
+    if(selector == NULL) {
+        fprintf(stderr, "Error creating selector\n");
+        exit(1);
+    }
+
+    selector_fd_set_nio(serverSocket);
+
+    const struct fd_handler accept_handler = {
+        .handle_read = socks5_accept, 
+        .handle_write = NULL,
+        .handle_block = NULL,
+        .handle_close = NULL,
+    };
+    
+    if(selector_register(selector, serverSocket, &accept_handler, OP_READ, NULL) != SELECTOR_SUCCESS) {
+        fprintf(stderr, "Error register listen socket\n");
+        exit(1);
+    }
+
+
     // Handle incomming connections
     while (1) {
-        printf("Listening for next client...\n");
-
-        struct sockaddr_storage clientAddress;
-        socklen_t clientAddressLen = sizeof(clientAddress);
-        // clientHandleSocket is a file descriptor
-        int clientHandleSocket = accept(serverSocket, (struct sockaddr*)&clientAddress, &clientAddressLen);
-
-
-        if (clientHandleSocket < 0) {
-            perror("[ERR] accept()");
-            exit(1);
-        } else {
-            char addrBuffer[128];
-            printSocketAddress((struct sockaddr*)&clientAddress, addrBuffer);
-            printf("[INF] New connection from %s\n", addrBuffer);
+        selector_status st = selector_select(selector);
+        if (st != SELECTOR_SUCCESS) {
+            fprintf(stderr, "[ERR] selector_select failed\n");
+            break;
         }
-
-        handleClient(clientHandleSocket);
-
-        close(clientHandleSocket);
     }
+
+    selector_destroy(selector);
+    selector_close();
+    close(serverSocket);
 }
