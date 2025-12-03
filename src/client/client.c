@@ -31,8 +31,8 @@ void perform_handshake(int sockfd) {
 
     // 3. Enviar credenciales (Subnegociación RFC 1929)
     // Formato: Ver(0x01) | Ulen | User | Plen | Pass
-    char username[] = "usuario";
-    char password[] = "secreto";
+    char username[] = "admin";
+    char password[] = "admin";
     
     char auth_req[512];
     int idx = 0;
