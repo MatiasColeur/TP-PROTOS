@@ -1,5 +1,7 @@
 include ./Makefile.inc
 
+UNAME_S := $(shell uname -s)
+
 SERVER_SOURCES=$(wildcard src/server/*.c)
 CLIENT_SOURCES=$(wildcard src/client/*.c)
 SHARED_SOURCES=$(wildcard src/shared/*.c)
@@ -14,8 +16,16 @@ SHARED_OBJECTS=$(SHARED_SOURCES:src/%.c=obj/%.o)
 SERVER_OUTPUT_FILE=$(OUTPUT_FOLDER)/socks5
 CLIENT_OUTPUT_FILE=$(OUTPUT_FOLDER)/client
 
-all: server client
 
+OPENSSL_INC_PATH = /opt/homebrew/opt/openssl/include
+OPENSSL_LIB_PATH = /opt/homebrew/opt/openssl/lib
+
+ifeq ($(UNAME_S),Darwin)
+    COMPILERFLAGS += -I$(OPENSSL_INC_PATH)
+    LDFLAGS += -L$(OPENSSL_LIB_PATH)
+endif
+
+all: server client
 server: $(SERVER_OUTPUT_FILE)
 client: $(CLIENT_OUTPUT_FILE)
 
