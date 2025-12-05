@@ -148,9 +148,9 @@ static void accept_handle_read(struct selector_key *key) {
 
         char addrBuffer[128];
         printSocketAddress((struct sockaddr*)&clientAddress, addrBuffer);
-        printf("[INF] New connection from %s\n", addrBuffer);
-
+        printf("[INF] New connection from %s. Registered for fd %d\n", addrBuffer, client_fd);
         handle_new_client(key->s, client_fd);
+        
     }
 }
 

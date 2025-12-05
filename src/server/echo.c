@@ -124,6 +124,7 @@ static void echo_handle_close(struct selector_key *key) {
     struct connection_info *client = key->data;
     free(client);
     close(key->fd);
+    printf("[INF] Closed connection on fd %d\n", key->fd);
 }
 
 
@@ -210,7 +211,6 @@ static unsigned echo_write_on_write(struct selector_key *key) {
         }
 
         if (n == 0) {
-            // no debería pasar en TCP normal, pero si pasa, cerramos
             return ECHO_DONE;
         }
 
@@ -233,7 +233,7 @@ static void echo_done_on_arrival(const unsigned state, struct selector_key *key)
 
 static void echo_error_on_arrival(const unsigned state, struct selector_key *key) {
     (void) state;
-    fprintf(stderr, "[ERR] echo: error state on fd %d, closing\n", key->fd);
+    fprintf(stderr, "[ERR] echo: error state on fd %d, closing...\n", key->fd);
     // ante un error liberamos el fd del selector; handle_close se encarga del free
     selector_unregister_fd(key->s, key->fd);
 }
