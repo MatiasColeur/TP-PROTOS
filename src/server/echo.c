@@ -16,8 +16,7 @@ enum echo_state {
     ECHO_READ,     
     ECHO_WRITE,    
     ECHO_DONE,     
-
-    ECHO_STATES_COUNT
+    ECHO_ERROR,
 };
 
 static void echo_handle_read (struct selector_key *key);
@@ -42,39 +41,31 @@ static void     echo_write_on_arrival(const unsigned state, struct selector_key 
 static unsigned echo_write_on_write  (struct selector_key *key);
 
 static void     echo_done_on_arrival (const unsigned state, struct selector_key *key);
+static void     echo_error_on_arrival(const unsigned state, struct selector_key *key);
 
 static const struct state_definition echo_states[] = {
     {
         .state          = ECHO_HELLO,
         .on_arrival     = echo_hello_on_arrival,
-        .on_departure   = NULL,
         .on_read_ready  = echo_hello_on_read,
-        .on_write_ready = NULL,
-        .on_block_ready = NULL,
     },
     {
         .state          = ECHO_READ,
         .on_arrival     = echo_read_on_arrival,
-        .on_departure   = NULL,
         .on_read_ready  = echo_read_on_read,
-        .on_write_ready = NULL,
-        .on_block_ready = NULL,
     },
     {
         .state          = ECHO_WRITE,
         .on_arrival     = echo_write_on_arrival,
-        .on_departure   = NULL,
-        .on_read_ready  = NULL,
         .on_write_ready = echo_write_on_write,
-        .on_block_ready = NULL,
     },
     {
         .state          = ECHO_DONE,
         .on_arrival     = echo_done_on_arrival,
-        .on_departure   = NULL,
-        .on_read_ready  = NULL,
-        .on_write_ready = NULL,
-        .on_block_ready = NULL,
+    },
+    {
+        .state          = ECHO_ERROR,
+        .on_arrival     = echo_error_on_arrival,
     },
 };
 
@@ -89,17 +80,28 @@ void handle_new_client(fd_selector selector, int client_fd) {
 
     client->stm.initial   = ECHO_HELLO;
     client->stm.states    = echo_states;
-    client->stm.max_state = ECHO_STATES_COUNT;
+    client->stm.max_state = ECHO_ERROR;
     stm_init(&client->stm);
 
     selector_status st = selector_register(selector, client_fd, 
         &echo_handler, OP_READ, client);
-        
+
     if (st != SELECTOR_SUCCESS) {
         fprintf(stderr, "selector_register(client_fd) error: %s\n", selector_error(st));
         close(client_fd);
         free(client);
         return;
+    }
+
+    // Ejecutamos el estado inicial apenas se acepta la conexión (antes de que llegue un read).
+    client->stm.current = client->stm.states + client->stm.initial;
+    if (client->stm.current->on_arrival != NULL) {
+        struct selector_key key = {
+            .s    = selector,
+            .fd   = client_fd,
+            .data = client,
+        };
+        client->stm.current->on_arrival(client->stm.current->state, &key);
     }
 }
 
@@ -129,7 +131,7 @@ static void echo_handle_close(struct selector_key *key) {
 
 static void echo_hello_on_arrival(const unsigned state, struct selector_key *key) {
     (void) state;
-    const char *msg = "Echo server ready. Escribí algo y lo devuelvo.\n";
+    const char *msg = "Echo server ready. Escribí algo y lo devuelvo.";
     ssize_t n = send(key->fd, msg, strlen(msg), 0);
     (void)n;
 
@@ -163,7 +165,7 @@ static unsigned echo_read_on_read(struct selector_key *key) {
         return ECHO_DONE;
     }
 
-    if (n == 0) {
+    if (n == 0 || (n == 1 && client->read_buffer[0] == EOF)) {
         // EOF → cliente cerró la conexión
         return ECHO_DONE;
     }
@@ -224,5 +226,14 @@ static unsigned echo_write_on_write(struct selector_key *key) {
 
 static void echo_done_on_arrival(const unsigned state, struct selector_key *key) {
     (void) state;
+    selector_unregister_fd(key->s, key->fd);
+}
+
+//------------------ ECHO_ERROR state handlers -------------------------------------------
+
+static void echo_error_on_arrival(const unsigned state, struct selector_key *key) {
+    (void) state;
+    fprintf(stderr, "[ERR] echo: error state on fd %d, closing\n", key->fd);
+    // ante un error liberamos el fd del selector; handle_close se encarga del free
     selector_unregister_fd(key->s, key->fd);
 }

@@ -34,15 +34,9 @@ int main(void) {
         return 1;
     }
 
-    printf("[INF] Connected! Sending ping...\n");
+    printf("[INF] Connected!\n");
 
-    const char *msg = "ping\n";
-    ssize_t sent = send(sockfd, msg, strlen(msg), 0);
-    if (sent < 0) {
-        perror("[ERR] send");
-        close(sockfd);
-        return 1;
-    }
+    
 
     char buffer[1024];
     ssize_t n = recv(sockfd, buffer, sizeof(buffer) - 1, 0);
@@ -54,7 +48,36 @@ int main(void) {
 
     buffer[n] = '\0';
 
-    printf("[INF] Received: %s\n", buffer);
+    printf("[INF] Received: '%s'\n", buffer);
+
+
+    char msg[1024];
+    ssize_t sent;
+
+    while (fgets(msg, sizeof(msg), stdin) != NULL) {
+
+        sent = send(sockfd, msg, strlen(msg)-1, 0);
+        if (sent < 0) {
+            perror("[ERR] send");
+            close(sockfd);
+            return 1;
+        }
+
+        n = recv(sockfd, buffer, sizeof(buffer) - 1, 0);
+        if (n < 0) {
+            perror("[ERR] recv");
+            close(sockfd);
+            return 1;
+        }
+
+        buffer[n] = '\0';   
+
+        printf("[INF] Received: '%s'\n", buffer);
+    }
+
+    msg[0] = EOF;
+    sent = send(sockfd, msg, 1, 0);
+
 
     close(sockfd);
     return 0;
