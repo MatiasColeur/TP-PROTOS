@@ -118,6 +118,8 @@ struct socks5_connection {
     char bnd_addr_str[ADDR_BUFFER_LEN];
 };
 
+typedef struct socks5_connection * socks5_connection_ptr;
+
 /**
  * @brief SOCKS5 per-connection state machine.
  *
