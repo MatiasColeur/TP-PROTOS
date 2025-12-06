@@ -1,12 +1,15 @@
 #include "../../include/socks5.h"
 
 #define BUFFER_SIZE         4096
+
 #define ADDR_BUFFER_LEN     64
+
 #define MAX_HOSTNAME_LENGTH 255
 #define MAX_USERNAME_LENGTH 255
 #define MAX_PASSWORD_LENGTH 255
-#define SOCKS5_STATES  (sizeof(socks5_states) / sizeof(socks5_states[0]))
 
+#define SOCKS5_STATES  (sizeof(socks5_states) / sizeof(socks5_states[0]))
+#define ATTACHMENT(key) ((struct socks5_connection *)(key)->data)
 
 /**
  * @brief Per-connection state and resources for a SOCKS5 session.
@@ -329,9 +332,12 @@ static ssize_t sendFull(int fd, const void* buf, size_t n, int flags) {
 /* -------- handle_new_connection() auxiliares prototypes -------- */
 
 static socks5_connection_ptr new_socks5_connection(fd_selector selector, int client_fd);
+
 static void socks5_stm_init(socks5_connection_ptr conn);
 static void socks5_buffers_init(socks5_connection_ptr conn);
+
 static bool socks5_selector_register(socks5_connection_ptr conn);
+
 static void socks5_jump_to_initial_state(socks5_connection_ptr conn);
 
 /**
@@ -773,6 +779,61 @@ int handleUsernamePasswordAuth(int clientSocket, char * username, char * passwor
     }
 
 
+}
+
+/* -------- per-state handlers -------- */
+
+static void
+socks5_read(struct selector_key *key) {
+    struct socks5_connection *conn = ATTACHMENT(key);
+
+    // Delega la lógica al estado actual
+    const fd_interest interest = stm_handler_read(&conn->stm, key);
+
+    if(interest != OP_NOOP) {
+        selector_set_interest_key(key, interest);
+    }
+}
+
+static void
+socks5_write(struct selector_key *key) {
+    struct socks5_connection *conn = ATTACHMENT(key);
+
+    const fd_interest interest = stm_handler_write(&conn->stm, key);
+
+    if(interest != OP_NOOP) {
+        selector_set_interest_key(key, interest);
+    }
+}
+
+static void
+socks5_block(struct selector_key *key) {
+    struct socks5_connection *conn = ATTACHMENT(key);
+
+    const fd_interest interest = stm_handler_block(&conn->stm, key);
+
+    if(interest != OP_NOOP) {
+        selector_set_interest_key(key, interest);
+    }
+}
+
+static void
+socks5_close(struct selector_key *key) {
+    struct socks5_connection *conn = ATTACHMENT(key);
+
+    stm_handler_close(&conn->stm, key);
+
+    if(conn->client_fd != -1) {
+        close(conn->client_fd);
+        conn->client_fd = -1;
+    }
+    if(conn->remote_fd != -1) {
+        close(conn->remote_fd);
+        conn->remote_fd = -1;
+    }
+
+    close(conn->client_fd);
+    free(conn);
 }
 
 /* -------- handle_new_connection() auxiliares -------- */
