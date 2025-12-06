@@ -5,13 +5,17 @@
 #define MAX_USERNAME_LENGTH 255
 #define MAX_PASSWORD_LENGTH 255
 
-typedef enum {
-    STAGE_AUTH,
-    STAGE_REQUEST,
-    STAGE_CONNECT,
-    STAGE_REPLY,
-    STAGE_CLOSED
-} ClientStage;
+enum socks5_stage {
+    SOCKS5_HELLO,
+    SOCKS5_AUTH,
+    SOCKS5_REQUEST,
+    SOCKS5_CONNECT,  
+    SOCKS5_REPLY,    
+    SOCKS5_RELAY,    
+    SOCKS5_DONE,
+    SOCKS5_ERROR,
+};
+
 
 typedef struct CientContext {
     int clientFd;
