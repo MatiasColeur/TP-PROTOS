@@ -179,6 +179,7 @@ enum socks5_state {
 
 
 /**
+ * @deprecated no longer used
  * Receives a full buffer of data from a socket, by receiving data until the requested amount
  * of bytes is reached. Returns the amount of bytes received, or -1 if receiving failed before
  * that amount was reached.
@@ -205,6 +206,7 @@ static ssize_t recvFull(int fd, void* buf, size_t n, int flags) {
 }
 
 /**
+ * @deprecated no longer used
  * Sends a full buffer of data from a socket, by sending data until the requested amount
  * of bytes is reached. Returns the amount of bytes sent, or -1 if sending failed before
  * that amount was reached.
