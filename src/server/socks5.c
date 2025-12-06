@@ -5,6 +5,8 @@
 #define MAX_HOSTNAME_LENGTH 255
 #define MAX_USERNAME_LENGTH 255
 #define MAX_PASSWORD_LENGTH 255
+#define SOCKS5_STATES  (sizeof(socks5_states) / sizeof(socks5_states[0]))
+
 
 /**
  * @brief Per-connection state and resources for a SOCKS5 session.
@@ -176,6 +178,86 @@ enum socks5_state {
      */
     SOCKS5_ERROR,
 };
+
+/* -------- Prototypes for per-state handlers -------- */
+
+static void     hello_on_arrival   (const unsigned state, struct selector_key *key);
+static unsigned hello_on_read      (struct selector_key *key);
+
+static void     auth_on_arrival    (const unsigned state, struct selector_key *key);
+static unsigned auth_on_read       (struct selector_key *key);
+
+static void     request_on_arrival (const unsigned state, struct selector_key *key);
+static unsigned request_on_read    (struct selector_key *key);
+
+static void     connect_on_arrival (const unsigned state, struct selector_key *key);
+static unsigned connect_on_block   (struct selector_key *key);
+
+static void     reply_on_arrival   (const unsigned state, struct selector_key *key);
+static unsigned reply_on_write     (struct selector_key *key);
+
+static void     relay_on_arrival   (const unsigned state, struct selector_key *key);
+static unsigned relay_on_read      (struct selector_key *key);
+static unsigned relay_on_write     (struct selector_key *key);
+
+static void     done_on_arrival    (const unsigned state, struct selector_key *key);
+static void     error_on_arrival   (const unsigned state, struct selector_key *key);
+
+
+/**
+ * @brief Handles read events for the SOCKS5 connection.
+ */
+static const struct state_definition socks5_states[] = {
+    
+    [SOCKS5_HELLO] = {
+        .state          = SOCKS5_HELLO,
+        .on_arrival     = hello_on_arrival,
+        .on_read_ready  = hello_on_read,
+    },
+
+    [SOCKS5_AUTH] = {
+        .state          = SOCKS5_AUTH,
+        .on_arrival     = auth_on_arrival,
+        .on_read_ready  = auth_on_read,
+    },
+
+    [SOCKS5_REQUEST] = {
+        .state          = SOCKS5_REQUEST,
+        .on_arrival     = request_on_arrival,
+        .on_read_ready  = request_on_read,
+    },
+
+    [SOCKS5_CONNECT] = {
+        .state          = SOCKS5_CONNECT,
+        .on_arrival     = connect_on_arrival,
+        .on_block_ready = connect_on_block,
+    },
+
+    [SOCKS5_REPLY] = {
+        .state          = SOCKS5_REPLY,
+        .on_arrival     = reply_on_arrival,
+        .on_write_ready = reply_on_write,
+    },
+
+    [SOCKS5_RELAY] = {
+        .state          = SOCKS5_RELAY,
+        .on_arrival     = relay_on_arrival,
+        .on_read_ready  = relay_on_read,
+        .on_write_ready = relay_on_write,
+    },
+
+    [SOCKS5_DONE] = {
+        .state          = SOCKS5_DONE,
+        .on_arrival     = done_on_arrival,
+    },
+
+    [SOCKS5_ERROR] = {
+        .state          = SOCKS5_ERROR,
+        .on_arrival     = error_on_arrival,
+    },
+};
+
+/* -------- SOCKS5 fd_handler -------- */
 
 static void socks5_read   (struct selector_key *key);
 static void socks5_write  (struct selector_key *key);
