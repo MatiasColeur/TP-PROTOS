@@ -326,10 +326,13 @@ static ssize_t sendFull(int fd, const void* buf, size_t n, int flags) {
     return totalSent;
 }
 
+/* -------- handle_new_connection() auxiliares prototypes -------- */
+
 static socks5_connection_ptr new_socks5_connection(fd_selector selector, int client_fd);
 static void socks5_stm_init(socks5_connection_ptr conn);
 static void socks5_buffers_init(socks5_connection_ptr conn);
 static bool socks5_selector_register(socks5_connection_ptr conn);
+static void socks5_jump_to_initial_state(socks5_connection_ptr conn);
 
 /**
  * @brief Principal function, called when a new client connects.
@@ -346,16 +349,7 @@ void handle_new_client(fd_selector selector, int client_fd) {
         socks5_buffers_init(conn);
         if(socks5_selector_register(conn)) {
 
-            conn->stm.current = conn->stm.states + conn->stm.initial;
-            if (conn->stm.current->on_arrival != NULL) {
-                struct selector_key key = {
-                    .s    = selector,
-                    .fd   = client_fd,
-                    .data = conn,
-                };
-                conn->stm.current->on_arrival(conn->stm.current->state, &key);
-            }
-
+            socks5_jump_to_initial_state(conn);
             return;
         }
     }
@@ -833,4 +827,18 @@ socks5_selector_register(socks5_connection_ptr conn) {
     }
 
     return true;
+}
+
+static void 
+socks5_jump_to_initial_state(socks5_connection_ptr conn) {
+
+    conn->stm.current = conn->stm.states + conn->stm.initial;
+            if (conn->stm.current->on_arrival != NULL) {
+                struct selector_key key = {
+                    .s    = conn->selector,
+                    .fd   = conn->client_fd,
+                    .data = conn,
+                };
+                conn->stm.current->on_arrival(conn->stm.current->state, &key);
+            }
 }
