@@ -783,6 +783,128 @@ int handleUsernamePasswordAuth(int clientSocket, char * username, char * passwor
 
 }
 
+/* -------- SOCKS5_HELLO state handlers --------*/
+/**
+ * @todo implement
+ */
+static void     hello_on_arrival   (const unsigned state, struct selector_key *key) {
+    
+    ;
+}
+/**
+ * @todo implement
+ */
+static unsigned hello_on_read      (struct selector_key *key) {
+
+    return 0;
+}
+
+/* -------- SOCKS5_AUTH state handlers --------*/
+/**
+ * @todo implement
+ */
+static void     auth_on_arrival    (const unsigned state, struct selector_key *key) {
+    
+    ;
+}
+/**
+ * @todo implement
+ */
+static unsigned auth_on_read       (struct selector_key *key) {
+
+    return 0;
+}
+
+/* -------- SOCKS5_REQUEST state handlers --------*/
+/**
+ * @todo implement
+ */
+static void     request_on_arrival (const unsigned state, struct selector_key *key) {
+    
+    ;
+}
+/**
+ * @todo implement
+ */
+static unsigned request_on_read    (struct selector_key *key) {
+
+    return 0;
+}
+
+/* -------- SOCKS5_CONNECT state handlers --------*/
+/**
+ * @todo implement
+ */
+static void     connect_on_arrival (const unsigned state, struct selector_key *key) {
+    
+    ;
+}
+/**
+ * @todo implement
+ */
+static unsigned connect_on_block   (struct selector_key *key) {
+
+    return 0;
+}
+
+/* -------- SOCKS5_REPLY state handlers --------*/
+/**
+ * @todo implement
+ */
+static void     reply_on_arrival   (const unsigned state, struct selector_key *key) {
+    
+    ;
+}
+/**
+ * @todo implement
+ */
+static unsigned reply_on_write     (struct selector_key *key) {
+
+    return 0;
+}
+
+/* -------- SOCKS5_RELAY state handlers --------*/
+/**
+ * @todo implement
+ */
+static void     relay_on_arrival   (const unsigned state, struct selector_key *key) {
+    
+    ;
+}
+
+/**
+ * @todo implement
+ */
+static unsigned relay_on_read      (struct selector_key *key) {
+
+    return 0;
+}
+/**
+ * @todo implement
+ */
+static unsigned relay_on_write     (struct selector_key *key) {
+
+    return 0;
+}
+
+/* -------- SOCKS5_DONE state handlers --------*/
+/**
+ * @todo implement
+ */
+static void     done_on_arrival    (const unsigned state, struct selector_key *key) {
+    
+    ;
+}
+
+/* -------- SOCKS5_ERROR state handlers --------*/
+/**
+ * @todo implement
+ */
+static void     error_on_arrival   (const unsigned state, struct selector_key *key) {
+    
+    ;
+}
+
 /* -------- per-state handlers -------- */
 
 static void
