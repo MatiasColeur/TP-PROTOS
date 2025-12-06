@@ -363,7 +363,9 @@ void handle_new_client(fd_selector selector, int client_fd) {
     }
 }
 
-/* temporally @deprecated
+/**
+ * @deprecated refactored
+ 
 int handle_new_client(fd_selector selector, int clientSocket) {
     //temporal
     (void)selector;
@@ -394,6 +396,10 @@ int handle_new_client(fd_selector selector, int clientSocket) {
     return status;
 } */
 
+/**
+ * @deprecated
+ * @todo refactor into SOCKS5_AUTH state handlers
+ */
 int handleAuthNegotiation(int clientSocket, char * clientUsername, char * clientPassword) {
     ssize_t received;
     char receiveBuffer[READ_BUFFER_SIZE + 1];
@@ -457,6 +463,10 @@ int handleAuthNegotiation(int clientSocket, char * clientUsername, char * client
     return 0;
 }
 
+/**
+ * @deprecated
+ * @todo refactor into SOCKS5_REQUEST state handlers
+ */
 int handleRequest(int clientSocket, struct addrinfo** connectAddresses, int * clientPort, char * clientHostname) {
     ssize_t received;
     char receiveBuffer[READ_BUFFER_SIZE + 1];
@@ -599,6 +609,10 @@ int handleRequest(int clientSocket, struct addrinfo** connectAddresses, int * cl
     return 0;
 }
 
+/**
+ * @deprecated
+ * @todo refactor into SOCKS5_CONNECT and SOCKS5_REPLY state handlers
+ */
 int handleConnectAndReply(int clientSocket, struct addrinfo** connectAddresses, int* remoteSocket) {
     char addrBuf[64];
     int aipIndex = 0;
@@ -679,6 +693,10 @@ int handleConnectAndReply(int clientSocket, struct addrinfo** connectAddresses, 
     return 0;
 }
 
+/**
+ * @deprecated
+ * @todo refactor into SOCKS5_RELAY state handlers (maybe also SOCKS5_REPLY)
+ */
 int handleConnectionData(int clientSocket, int remoteSocket) {
     ssize_t received;
     char receiveBuffer[4096];
@@ -720,6 +738,11 @@ int handleConnectionData(int clientSocket, int remoteSocket) {
     return 0;
 }
 
+
+/**
+ * @deprecated
+ * @todo refactor into SOCKS5_AUTH state handlers
+ */
 int handleUsernamePasswordAuth(int clientSocket, char * username, char * password, size_t maxLen) {
     char buffer[READ_BUFFER_SIZE + 1];
 
