@@ -773,7 +773,7 @@ int handleUsernamePasswordAuth(int clientSocket, char * username, char * passwor
 
 }
 
-
+/* -------- handle_new_connection() auxiliares -------- */
 
 static socks5_connection_ptr 
 new_socks5_connection(fd_selector selector, int client_fd) {
