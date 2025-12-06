@@ -340,6 +340,8 @@ static bool socks5_selector_register(socks5_connection_ptr conn);
 
 static void socks5_jump_to_initial_state(socks5_connection_ptr conn);
 
+static void inline socks5_kill_connection(socks5_connection_ptr conn);
+
 /**
  * @brief Principal function, called when a new client connects.
  * @details Initializes the per-connection state, state machine, buffers,
@@ -823,17 +825,7 @@ socks5_close(struct selector_key *key) {
 
     stm_handler_close(&conn->stm, key);
 
-    if(conn->client_fd != -1) {
-        close(conn->client_fd);
-        conn->client_fd = -1;
-    }
-    if(conn->remote_fd != -1) {
-        close(conn->remote_fd);
-        conn->remote_fd = -1;
-    }
-
-    close(conn->client_fd);
-    free(conn);
+    socks5_kill_connection(conn);
 }
 
 /* -------- handle_new_connection() auxiliares -------- */
@@ -841,7 +833,7 @@ socks5_close(struct selector_key *key) {
 static socks5_connection_ptr 
 new_socks5_connection(fd_selector selector, int client_fd) {
     
-    socks5_connection_ptr conn = alloc(1, sizeof(*conn));
+    socks5_connection_ptr conn = calloc(1, sizeof(*conn));
     
     if (conn == NULL) {
 
@@ -882,8 +874,7 @@ socks5_selector_register(socks5_connection_ptr conn) {
 
     if (st != SELECTOR_SUCCESS) {
         fprintf(stderr, "selector_register(client_fd) error: %s\n", selector_error(st));
-        close(conn->client_fd);
-        free(conn);
+        socks5_kill_connection(conn);
         return false;
     }
 
@@ -902,4 +893,20 @@ socks5_jump_to_initial_state(socks5_connection_ptr conn) {
                 };
                 conn->stm.current->on_arrival(conn->stm.current->state, &key);
             }
+}
+
+static void inline
+socks5_kill_connection(socks5_connection_ptr conn) {
+    if(conn != NULL) {
+        if(conn->client_fd != -1) {
+            close(conn->client_fd);
+            conn->client_fd = -1;
+        }
+        if(conn->remote_fd != -1) {
+            close(conn->remote_fd);
+            conn->remote_fd = -1;
+        }
+
+        free(conn);
+    }
 }
