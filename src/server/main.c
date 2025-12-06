@@ -14,7 +14,6 @@
 #include "../../include/selector.h"
 
 #define MAX_PENDING_CONNECTION_REQUESTS 5
-#define SIMULTANEOUS_CONNECTIONS 10
 #define SOURCE_PORT 1080
 
 static void accept_handle_read(struct selector_key *key);
@@ -89,7 +88,7 @@ int main(int argc, const char* argv[]) {
         return EXIT_FAILURE;
     }
 
-    fd_selector selector = selector_new(SIMULTANEOUS_CONNECTIONS);
+    fd_selector selector = selector_new(10);
     if (selector == NULL) {
         fprintf(stderr, "selector_new error\n");
         selector_close();
