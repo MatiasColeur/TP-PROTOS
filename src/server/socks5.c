@@ -177,6 +177,18 @@ enum socks5_state {
     SOCKS5_ERROR,
 };
 
+static void socks5_read   (struct selector_key *key);
+static void socks5_write  (struct selector_key *key);
+static void socks5_close  (struct selector_key *key);
+static void socks5_block  (struct selector_key *key);
+
+const struct fd_handler socks5_handler = {
+    .handle_read  = socks5_read,
+    .handle_write = socks5_write,
+    .handle_close = socks5_close,
+    .handle_block = socks5_block,
+};
+
 
 /**
  * @deprecated no longer used
