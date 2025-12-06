@@ -326,6 +326,33 @@ static ssize_t sendFull(int fd, const void* buf, size_t n, int flags) {
     return totalSent;
 }
 
+static socks5_connection_ptr new_socks5_connection(fd_selector selector, int client_fd);
+static void socks5_stm_init(socks5_connection_ptr conn);
+static void socks5_buffers_init(socks5_connection_ptr conn);
+static bool socks5_selector_register(socks5_connection_ptr conn);
+
+/**
+ * @brief Principal function, called when a new client connects.
+ * @details Initializes the per-connection state, state machine, buffers,
+ */
+
+void handle_new_client(fd_selector selector, int client_fd) {
+
+    socks5_connection_ptr conn = new_socks5_connection(selector, client_fd);
+
+    if(conn != NULL) {
+
+        socks5_stm_init(conn);        
+        socks5_buffers_init(conn);
+        if(socks5_selector_register(conn)) {
+
+            // success...
+
+            return;
+        }
+    }
+}
+
 /* temporally @deprecated
 int handle_new_client(fd_selector selector, int clientSocket) {
     //temporal
@@ -746,27 +773,7 @@ int handleUsernamePasswordAuth(int clientSocket, char * username, char * passwor
 
 }
 
-static socks5_connection_ptr new_socks5_connection(fd_selector selector, int client_fd);
-static void socks5_stm_init(socks5_connection_ptr conn);
-static void socks5_buffers_init(socks5_connection_ptr conn);
-static bool socks5_selector_register(socks5_connection_ptr conn);
 
-void handle_new_client(fd_selector selector, int client_fd) {
-
-    socks5_connection_ptr conn = new_socks5_connection(selector, client_fd);
-
-    if(conn != NULL) {
-
-        socks5_stm_init(conn);        
-        socks5_buffers_init(conn);
-        if(socks5_selector_register(conn)) {
-
-            // success...
-
-            return;
-        }
-    }
-}
 
 static socks5_connection_ptr 
 new_socks5_connection(fd_selector selector, int client_fd) {
