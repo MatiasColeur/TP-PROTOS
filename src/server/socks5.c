@@ -888,12 +888,14 @@ static unsigned relay_on_write     (struct selector_key *key) {
 }
 
 /* -------- SOCKS5_DONE state handlers --------*/
+
 /**
- * @todo implement
+ * @note handle_close() will take care of cleaning up the connection.
  */
 static void     done_on_arrival    (const unsigned state, struct selector_key *key) {
     
-    ;
+    (void) state;
+    selector_unregister_fd(key->s, key->fd);
 }
 
 /* -------- SOCKS5_ERROR state handlers --------*/
