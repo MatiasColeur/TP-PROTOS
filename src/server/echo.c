@@ -3,13 +3,12 @@
 struct connection_info {
     struct state_machine stm;
 
-    uint8_t read_buffer[4096];
-    uint8_t write_buffer[4096];
-
-    size_t read_bytes;
-    size_t write_bytes;
-    size_t write_offset;
+    buffer  read_buf;
+    buffer  write_buf;
+    uint8_t read_raw[4096];
+    uint8_t write_raw[4096];
 };
+
 
 enum echo_state {
     ECHO_HELLO = 0,
@@ -78,10 +77,17 @@ void handle_new_client(fd_selector selector, int client_fd) {
         return;
     }
 
+// State machine:
+
     client->stm.initial   = ECHO_HELLO;
     client->stm.states    = echo_states;
     client->stm.max_state = ECHO_ERROR;
     stm_init(&client->stm);
+
+// Buffer:
+
+    buffer_init(&client->read_buf,  sizeof(client->read_raw),  client->read_raw);
+    buffer_init(&client->write_buf, sizeof(client->write_raw), client->write_raw);
 
     selector_status st = selector_register(selector, client_fd, 
         &echo_handler, OP_READ, client);
@@ -149,38 +155,55 @@ static unsigned echo_hello_on_read(struct selector_key *key) {
 
 static void echo_read_on_arrival(const unsigned state, struct selector_key *key) {
     (void) state;
-    // nos aseguramos de que solo nos interese leer
     selector_set_interest_key(key, OP_READ);
 }
+
+
 
 static unsigned echo_read_on_read(struct selector_key *key) {
     struct connection_info *client = key->data;
 
-    ssize_t n = recv(key->fd, client->read_buffer, sizeof(client->read_buffer), 0);
+    size_t wbytes;
+    uint8_t *wptr = buffer_write_ptr(&client->read_buf, &wbytes);
+
+    if (wbytes == 0) {
+        // read_buf lleno -> no podemos leer más, pasemos a escribir
+        selector_set_interest_key(key, OP_WRITE);
+        return ECHO_WRITE;
+    }
+
+    ssize_t n = recv(key->fd, wptr, wbytes, 0);
     if (n < 0) {
         if (errno == EAGAIN || errno == EWOULDBLOCK) {
-            // no hay datos ahora, seguimos en el mismo estado
-            return ECHO_READ;
+            return ECHO_READ; // no hay datos ahora
         }
         perror("[ERR] recv");
         return ECHO_DONE;
     }
 
-    if (n == 0 || (n == 1 && client->read_buffer[0] == EOF)) {
-        // EOF → cliente cerró la conexión
+    if (n == 0) {
         return ECHO_DONE;
     }
 
-    // copiamos lo recibido al buffer de escritura
-    memcpy(client->write_buffer, client->read_buffer, (size_t)n);
-    client->write_bytes  = (size_t)n;
-    client->write_offset = 0;
+    buffer_write_adv(&client->read_buf, n);
 
-    // ahora nos interesa escribir
-    selector_set_interest_key(key, OP_WRITE);
+    // Copiar del read_buf al write_buf (echo)
+    while (buffer_can_read(&client->read_buf) && buffer_can_write(&client->write_buf)) {
+        uint8_t c = buffer_read(&client->read_buf);
+        buffer_write(&client->write_buf, c);
+    }
 
-    return ECHO_WRITE;
+    // Si hay que mandar datos, vamos a ECHO_WRITE
+    if (buffer_can_read(&client->write_buf)) {
+        selector_set_interest_key(key, OP_WRITE);
+        return ECHO_WRITE;
+    }
+
+    // si no hay nada para escribir, seguimos leyendo
+    selector_set_interest_key(key, OP_READ);
+    return ECHO_READ;
 }
+
 
 //------------------ ECHO_WRITE state handlers -------------------------------------------
 
@@ -193,17 +216,18 @@ static void echo_write_on_arrival(const unsigned state, struct selector_key *key
 static unsigned echo_write_on_write(struct selector_key *key) {
     struct connection_info *client = key->data;
 
-    while (client->write_offset < client->write_bytes) {
-        ssize_t n = send(
-            key->fd,
-            client->write_buffer + client->write_offset,
-            client->write_bytes - client->write_offset,
-            0
-        );
+    while (buffer_can_read(&client->write_buf)) {
+        size_t rbytes;
+        uint8_t *rptr = buffer_read_ptr(&client->write_buf, &rbytes);
 
+        if (rbytes == 0) {
+            break;
+        }
+
+        ssize_t n = send(key->fd, rptr, rbytes, 0);
         if (n < 0) {
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                // no podemos escribir más ahora, seguimos en WRITE
+                // no podemos escribir más ahora
                 return ECHO_WRITE;
             }
             perror("[ERR] send");
@@ -211,16 +235,23 @@ static unsigned echo_write_on_write(struct selector_key *key) {
         }
 
         if (n == 0) {
+            // no sé que pasó
             return ECHO_DONE;
         }
 
-        client->write_offset += (size_t)n;
+        buffer_read_adv(&client->write_buf, n);
     }
 
-    // ya mandamos todo → volvemos a leer
-    selector_set_interest_key(key, OP_READ);
-    return ECHO_READ;
+    // si ya no queda nada para escribir, volvemos a leer
+    if (!buffer_can_read(&client->write_buf)) {
+        selector_set_interest_key(key, OP_READ);
+        return ECHO_READ;
+    }
+
+    // todavía queda algo por escribir
+    return ECHO_WRITE;
 }
+
 
 //------------------ ECHO_DONE state handlers --------------------------------------------
 

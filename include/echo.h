@@ -19,6 +19,7 @@
 #include "util.h"
 #include "selector.h"
 #include "stm.h"
+#include "buffer.h"
 
 void 
 handle_new_client(fd_selector selector, int client_fd);
