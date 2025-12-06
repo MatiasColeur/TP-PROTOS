@@ -897,12 +897,15 @@ static void     done_on_arrival    (const unsigned state, struct selector_key *k
 }
 
 /* -------- SOCKS5_ERROR state handlers --------*/
+
 /**
- * @todo implement
+ * @note handle_close() will take care of cleaning up the connection.
  */
 static void     error_on_arrival   (const unsigned state, struct selector_key *key) {
     
-    ;
+    (void) state;
+    fprintf(stderr, "[ERR] echo: error state on fd %d, closing...\n", key->fd);
+    selector_unregister_fd(key->s, key->fd);
 }
 
 /* -------- per-state handlers -------- */
