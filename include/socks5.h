@@ -18,6 +18,7 @@
 
 #include "util.h"
 #include "logger.h"
+#include "selector.h"
 
 #define VER 5
 

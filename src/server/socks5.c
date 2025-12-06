@@ -75,8 +75,10 @@ static ssize_t sendFull(int fd, const void* buf, size_t n, int flags) {
     return totalSent;
 }
 
-int handleClient(int clientSocket) {
-    
+int handle_new_client(fd_selector selector, int clientSocket) {
+    //temporal
+    (void)selector;
+
     char clientUsername[MAX_USERNAME_LENGTH + 1];
     char clientHostname[MAX_HOSTNAME_LENGTH + 1];
     char clientPassword[MAX_PASSWORD_LENGTH + 1];
