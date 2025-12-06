@@ -1,9 +1,122 @@
 #include "../../include/socks5.h"
 
-#define READ_BUFFER_SIZE 2048
+#define BUFFER_SIZE         4096
+#define ADDR_BUFFER_LEN     64
 #define MAX_HOSTNAME_LENGTH 255
 #define MAX_USERNAME_LENGTH 255
 #define MAX_PASSWORD_LENGTH 255
+
+/**
+ * @brief Per-connection state and resources for a SOCKS5 session.
+ */
+struct socks5_connection {
+
+/* -------- Infrastructure -------- */
+
+    /** 
+     * @brief Client socket endpoint. 
+     */
+    int client_fd;
+
+    /** 
+     * @brief Remote destination socket (after CONNECT). 
+     */
+    int remote_fd;
+
+    /** 
+     * @brief SOCKS5 state machine instance. 
+     */
+    struct state_machine stm;
+
+    /** 
+     * @brief Selector used for I/O multiplexing and notify_block. 
+     */
+    fd_selector selector;
+
+/* -------- Buffers -------- */
+
+    /** 
+     * @brief High-level I/O buffers for client/remote traffic. 
+     */
+    buffer client_read_buf, client_write_buf;
+    buffer remote_read_buf, remote_write_buf;
+
+    /** 
+     * @brief Raw backing storage for each buffer. 
+     */
+    uint8_t client_read_raw [BUFFER_SIZE];
+    uint8_t client_write_raw[BUFFER_SIZE];
+    uint8_t remote_read_raw [BUFFER_SIZE];
+    uint8_t remote_write_raw[BUFFER_SIZE];
+
+/* -------- Auth (RFC 1929) -------- */
+
+    /** 
+     * @brief Username received during authentication. 
+     */
+    char username[MAX_USERNAME_LENGTH + 1];
+
+    /** 
+     * @brief Password received during authentication. 
+     */
+    char password[MAX_PASSWORD_LENGTH + 1];
+
+/* -------- Request fields (RFC 1928) -------- */
+
+    /** 
+     * @brief Address type (IPv4, IPv6, DOMAIN). 
+     */
+    uint8_t atyp;
+
+    /** 
+     * @brief Parsed destination host (DOMAIN/IP). 
+     */
+    char host[MAX_HOSTNAME_LENGTH + 1];
+
+    /** 
+     * @brief Destination port. 
+     */
+    uint16_t port;
+
+/* -------- Resolution & connect() -------- */
+
+    /** 
+     * @brief Results from getaddrinfo(). 
+     */
+    struct addrinfo *addr_list;
+
+    /** 
+     * @brief Next candidate address to try. 
+     */
+    struct addrinfo *addr_next;
+
+    /** 
+     * @brief Non-blocking connect() in progress (EINPROGRESS). 
+     */
+    int connect_pending;
+
+    /** 
+     * @brief SO_ERROR result for building the SOCKS5 reply. 
+     */
+    int connect_status;
+
+/* -------- Auxiliary -------- */
+
+    /** 
+     * @brief True if client closed its half of the connection. 
+     */
+    bool client_closed;
+
+    /** 
+     * @brief True if remote closed its half. 
+     */
+    bool remote_closed;
+
+    /** 
+     * @brief String-formatted BND.ADDR for the reply. 
+     */
+    char bnd_addr_str[ADDR_BUFFER_LEN];
+};
 
 /**
  * @brief SOCKS5 per-connection state machine.
@@ -62,15 +175,6 @@ enum socks5_state {
     SOCKS5_ERROR,
 };
 
-typedef struct CientContext {
-    int clientFd;
-    int remoteFd;
-    ClientStage stage;
-    char username[MAX_USERNAME_LENGTH + 1];
-    char password[MAX_PASSWORD_LENGTH + 1];
-    char hostname[MAX_HOSTNAME_LENGTH + 1];
-    int port;
-} ClientContext;
 
 /**
  * Receives a full buffer of data from a socket, by receiving data until the requested amount

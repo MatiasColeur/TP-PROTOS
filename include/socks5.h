@@ -19,6 +19,8 @@
 #include "util.h"
 #include "logger.h"
 #include "selector.h"
+#include "stm.h"
+#include "buffer.h"
 #include "auth.h"
 
 #define VER 5
