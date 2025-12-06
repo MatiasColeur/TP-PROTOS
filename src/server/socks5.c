@@ -346,7 +346,15 @@ void handle_new_client(fd_selector selector, int client_fd) {
         socks5_buffers_init(conn);
         if(socks5_selector_register(conn)) {
 
-            // success...
+            conn->stm.current = conn->stm.states + conn->stm.initial;
+            if (conn->stm.current->on_arrival != NULL) {
+                struct selector_key key = {
+                    .s    = selector,
+                    .fd   = client_fd,
+                    .data = conn,
+                };
+                conn->stm.current->on_arrival(conn->stm.current->state, &key);
+            }
 
             return;
         }
