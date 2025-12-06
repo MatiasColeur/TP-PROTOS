@@ -37,12 +37,12 @@ int main(int argc, const char* argv[]) {
     int serverSocket = socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP);
     if (serverSocket < 0) {
         perror("[ERR] socket()");
-        exit(1);
+        exit(EXIT_FAILURE);
     }
 
     if (selector_fd_set_nio(serverSocket) == -1) {
         perror("[ERR] selector_fd_set_nio(serverSocket)");
-        exit(1);
+        exit(EXIT_FAILURE);
     }
 
     // We want to bind our socket on IPv6 listening on all available IP addresses on port SOURCE_PORT.
