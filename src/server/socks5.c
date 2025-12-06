@@ -326,6 +326,7 @@ static ssize_t sendFull(int fd, const void* buf, size_t n, int flags) {
     return totalSent;
 }
 
+/* temporally @deprecated
 int handle_new_client(fd_selector selector, int clientSocket) {
     //temporal
     (void)selector;
@@ -354,7 +355,7 @@ int handle_new_client(fd_selector selector, int clientSocket) {
     int status = handleConnectionData(clientSocket, remoteSocket);
     close(remoteSocket);
     return status;
-}
+} */
 
 int handleAuthNegotiation(int clientSocket, char * clientUsername, char * clientPassword) {
     ssize_t received;
@@ -743,4 +744,78 @@ int handleUsernamePasswordAuth(int clientSocket, char * username, char * passwor
     }
 
 
+}
+
+static socks5_connection_ptr new_socks5_connection(fd_selector selector, int client_fd);
+static void socks5_stm_init(socks5_connection_ptr conn);
+static void socks5_buffers_init(socks5_connection_ptr conn);
+static bool socks5_selector_register(socks5_connection_ptr conn);
+
+void handle_new_client(fd_selector selector, int client_fd) {
+
+    socks5_connection_ptr conn = new_socks5_connection(selector, client_fd);
+
+    if(conn != NULL) {
+
+        socks5_stm_init(conn);        
+        socks5_buffers_init(conn);
+        if(socks5_selector_register(conn)) {
+
+            // success...
+
+            return;
+        }
+    }
+}
+
+static socks5_connection_ptr 
+new_socks5_connection(fd_selector selector, int client_fd) {
+    
+    socks5_connection_ptr conn = alloc(1, sizeof(*conn));
+    
+    if (conn == NULL) {
+
+        perror("[ERR] malloc socks5_connection");
+        close(client_fd);
+        return NULL;
+    }
+
+    conn->client_fd = client_fd;
+    conn->remote_fd = -1;
+    conn->selector = selector;
+
+    return conn;
+}
+
+static void
+socks5_stm_init(socks5_connection_ptr conn) {
+    
+    conn->stm.initial = SOCKS5_HELLO;
+    conn->stm.states =  socks5_states;
+    conn->stm.max_state = SOCKS5_ERROR;
+    stm_init(&conn->stm);
+}
+
+static void 
+socks5_buffers_init(socks5_connection_ptr conn) {
+    
+    buffer_init(&conn->client_read_buf, sizeof(conn->client_read_raw), conn->client_read_raw);
+    buffer_init(&conn->client_write_buf, sizeof(conn->client_write_raw), conn->client_write_raw);
+    buffer_init(&conn->remote_read_buf, sizeof(conn->remote_read_raw), conn->remote_read_raw);
+    buffer_init(&conn->remote_write_buf, sizeof(conn->remote_write_raw), conn->remote_write_raw);
+}
+
+static bool
+socks5_selector_register(socks5_connection_ptr conn) {
+    selector_status st = selector_register(conn->selector, conn->client_fd,
+        &socks5_handler, OP_READ, conn);
+
+    if (st != SELECTOR_SUCCESS) {
+        fprintf(stderr, "selector_register(client_fd) error: %s\n", selector_error(st));
+        close(conn->client_fd);
+        free(conn);
+        return false;
+    }
+
+    return true;
 }
