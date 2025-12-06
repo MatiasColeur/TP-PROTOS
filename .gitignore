@@ -61,3 +61,4 @@ obj/
 
 # Visual Studio Code stuffs
 .vscode/
+.DS_Store
