@@ -402,7 +402,7 @@ int handle_new_client(fd_selector selector, int clientSocket) {
  */
 int handleAuthNegotiation(int clientSocket, char * clientUsername, char * clientPassword) {
     ssize_t received;
-    char receiveBuffer[READ_BUFFER_SIZE + 1];
+    char receiveBuffer[BUFFER_SIZE + 1];
 
     // Socks5 starts with the client sending VER, NMETHODS followed by that amount of METHODS. Let's read VER and NMETHODS.
     received = recvFull(clientSocket, receiveBuffer, 2, 0);
@@ -441,7 +441,7 @@ int handleAuthNegotiation(int clientSocket, char * clientUsername, char * client
 
         // Wait for the client to close the TCP connection.
         printf("[INF] Waiting for client to close the connection.\n");
-        while (recv(clientSocket, receiveBuffer, READ_BUFFER_SIZE, 0) > 0) {}
+        while (recv(clientSocket, receiveBuffer, BUFFER_SIZE, 0) > 0) {}
         return -1;
     }
 
@@ -469,7 +469,7 @@ int handleAuthNegotiation(int clientSocket, char * clientUsername, char * client
  */
 int handleRequest(int clientSocket, struct addrinfo** connectAddresses, int * clientPort, char * clientHostname) {
     ssize_t received;
-    char receiveBuffer[READ_BUFFER_SIZE + 1];
+    char receiveBuffer[BUFFER_SIZE + 1];
 
     // Read from a client request: VER, CMD, RSV, ATYP.
     received = recvFull(clientSocket, receiveBuffer, 4, 0);
@@ -744,7 +744,7 @@ int handleConnectionData(int clientSocket, int remoteSocket) {
  * @todo refactor into SOCKS5_AUTH state handlers
  */
 int handleUsernamePasswordAuth(int clientSocket, char * username, char * password, size_t maxLen) {
-    char buffer[READ_BUFFER_SIZE + 1];
+    char buffer[BUFFER_SIZE + 1];
 
     ssize_t received = recvFull(clientSocket, buffer, 2, 0);
 
