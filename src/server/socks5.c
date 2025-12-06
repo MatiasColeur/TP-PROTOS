@@ -5,17 +5,62 @@
 #define MAX_USERNAME_LENGTH 255
 #define MAX_PASSWORD_LENGTH 255
 
-enum socks5_stage {
+/**
+ * @brief SOCKS5 per-connection state machine.
+ *
+ * @details This state machine follows the flow defined in
+ * RFC 1928 (SOCKS Protocol Version 5) and RFC 1929 (Username/Password Authentication).
+ *
+ * Each state represents a well-defined phase of the SOCKS5 handshake,
+ * request processing, and subsequent client–remote data relaying.
+ */
+enum socks5_state {
+
+    /**
+     * @brief Initial greeting negotiation.
+     * @see RFC1928 Section 3
+     */
     SOCKS5_HELLO,
+    
+    /**
+     * @brief Username/Password authentication phase.
+     * @see RFC1929
+     */
     SOCKS5_AUTH,
+
+    /**
+     * @brief Parse the client request (CMD, ATYP, ADDR, PORT).
+     * @note Only CONNECT is implemented in this TP.
+     * @see RFC1928 Section 4
+     */
     SOCKS5_REQUEST,
-    SOCKS5_CONNECT,  
-    SOCKS5_REPLY,    
-    SOCKS5_RELAY,    
+
+    /**
+     * @brief Attempt connection to the target host.
+     */
+    SOCKS5_CONNECT,
+
+    /**
+     * @brief Send the SOCKS5 reply back to the client.
+     * @see RFC1928 Section 6
+     */
+    SOCKS5_REPLY,
+
+    /**
+     * @brief Bidirectional relay between client and remote.
+     */
+    SOCKS5_RELAY,
+
+    /**
+     * @brief Normal termination state.
+     */
     SOCKS5_DONE,
+
+    /**
+     * @brief Error termination state.
+     */
     SOCKS5_ERROR,
 };
-
 
 typedef struct CientContext {
     int clientFd;
