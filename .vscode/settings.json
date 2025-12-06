@@ -15,6 +15,9 @@
         "variant": "c",
         "util.h": "c",
         "logger.h": "c",
-        "stdlib.h": "c"
+        "stdlib.h": "c",
+        "socks5.h": "c",
+        "cstdint": "c",
+        "stdint.h": "c"
     }
 }

@@ -481,7 +481,7 @@ int handleUsernamePasswordAuth(int clientSocket, char * username, char * passwor
 
     // Validate credentials. In this implementation we accept every user.
     // VER, STATUS
-    int authSuccess = 1;
+    int authSuccess = auth_validate_user(username,password);
 
     if (authSuccess) {
         sendFull(clientSocket, "\x01\x00", 2, 0);
