@@ -794,10 +794,63 @@ static void hello_on_arrival(const unsigned state, struct selector_key *key) {
 /**
  * @todo implement
  */
-static unsigned hello_on_read      (struct selector_key *key) {
+static unsigned hello_on_read(struct selector_key *key) {
+    /* recupero info de la conexion */
+    socks5_connection_ptr conn = ATTACHMENT(key);
 
-    return 0;
+    /* uso el buffer client_read_buff para guardar lo leido */
+    buffer *rb = &conn->client_read_buf;
+
+    /* leer lo disponible */
+    size_t n;
+    uint8_t *wptr = buffer_write_ptr(rb, &n); // esta funcion encuentra un espacio contiguo de tam n para escribir en rb 
+    ssize_t r = recv(key->fd, wptr, n, 0);   // lee desde el fd del cliente al buffer de recien 
+    if (r <= 0) {
+        return SOCKS5_ERROR;  // error o cierre del cliente
+    }
+    buffer_write_adv(rb, r); // avanza el puntero de escritura del buffer 
+
+    /* ver si ya hay datos suficientes */
+    size_t avail;
+    uint8_t *rptr = buffer_read_ptr(rb, &avail);
+    if (avail < 2) {
+        return SOCKS5_HELLO;  // esperar más
+    }
+
+    uint8_t ver      = rptr[0];
+    uint8_t nmethods = rptr[1];
+    if (avail < (size_t)(2 + nmethods)) {
+        return SOCKS5_HELLO;  // esperar todos los métodos
+    }
+
+    if (ver != 0x05) {
+        (void) send(key->fd, "\x05\xff", 2, 0);  // versión no soportada
+        buffer_read_adv(rb, 2 + nmethods);
+        return SOCKS5_ERROR;
+    }
+
+    bool has_userpass = false;
+    for (uint8_t i = 0; i < nmethods; i++) {
+        // dentro de los metodos de auth que ofrece el cliente (que están guardados en rptr) busco si está el de user/pass (0x02)
+        if (rptr[2 + i] == 0x02) {
+            has_userpass = true;
+            break;
+        }
+    }
+
+    uint8_t resp[2] = {0x05, has_userpass ? 0x02 : 0xff};
+    (void) send(key->fd, resp, 2, 0); // responder al cliente con el método elegido
+
+    buffer_read_adv(rb, 2 + nmethods); // avanza el puntero de lectura para descartar el saludo ya procesado
+
+    if (!has_userpass) {
+        return SOCKS5_ERROR; // cerrás después en handle_close
+    }
+
+    selector_set_interest_key(key, OP_READ);  // mantenemos interes de lectura sobre el fd del cliente
+    return SOCKS5_AUTH; 
 }
+
 
 /* -------- SOCKS5_AUTH state handlers --------*/
 /**
