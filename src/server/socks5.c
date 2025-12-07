@@ -364,39 +364,6 @@ void handle_new_client(fd_selector selector, int client_fd) {
 }
 
 /**
- * @deprecated refactored
- 
-int handle_new_client(fd_selector selector, int clientSocket) {
-    //temporal
-    (void)selector;
-
-    char clientUsername[MAX_USERNAME_LENGTH + 1];
-    char clientHostname[MAX_HOSTNAME_LENGTH + 1];
-    char clientPassword[MAX_PASSWORD_LENGTH + 1];
-    int  clientPort;
-
-    if (handleAuthNegotiation(clientSocket, clientUsername, clientPassword))
-        return -1;
-    
-    // The client can now start sending requests.
-    struct addrinfo* connectAddresses;
-    if (handleRequest(clientSocket, &connectAddresses, &clientPort, clientHostname))
-        return -1;
-
-    // Now we must conenct to the requested server and reply with success/error code.
-    int remoteSocket = -1;
-    if (handleConnectAndReply(clientSocket, &connectAddresses, &remoteSocket))
-        return -1;
-
-    logAccess(clientUsername, clientPassword, clientHostname, clientPort);
-
-    // The connection has been established! Now the client and requested server can talk to each other.
-    int status = handleConnectionData(clientSocket, remoteSocket);
-    close(remoteSocket);
-    return status;
-} */
-
-/**
  * @deprecated
  * @todo refactor into SOCKS5_AUTH state handlers
  */
