@@ -869,10 +869,69 @@ static void auth_on_arrival(const unsigned state, struct selector_key *key) {
 }
 /**
  * @todo implement
+ * @brief reads and process the message from auth user/password
+ * format: VER (1) | ULEN (1) | UNAME (Var) | PLEN (1) | PASSWD (Var)
  */
-static unsigned auth_on_read       (struct selector_key *key) {
+static unsigned auth_on_read(struct selector_key *key) {
+    socks5_connection_ptr conn = ATTACHMENT(key);
+    buffer *buffer = &conn->client_read_buf;
 
-    return 0;
+    size_t count;
+    uint8_t *wptr = buffer_write_ptr(buffer, &count);    
+    ssize_t n = recv(key->fd, wptr, count, 0);//writes from socket to buffer
+
+    if (n <= 0) {       // connection validation
+        fprintf(stderr, "[ERR] Invalid Connection \n");
+        return SOCKS5_ERROR;
+    }
+    buffer_write_adv(buffer, n);
+
+    size_t len;
+    uint8_t *ptr = buffer_read_ptr(buffer, &len);   //get read pointer
+
+    if (len < 2) return SOCKS5_AUTH; //if its smaller than 2, its incomplete
+
+    uint8_t ver = ptr[0];
+    uint8_t ulen = ptr[1];
+
+    if (ver != SUBNEGOTIATION_VER) {
+        fprintf(stderr, "[ERR] Invalid Version \n");
+        return SOCKS5_ERROR; //Invalid version
+    }
+    if (len < 2 + ulen + 1) return SOCKS5_AUTH; // its incomplete
+
+    uint8_t plen = ptr[2 + ulen];
+
+    size_t total_msg_len = 2 + ulen + 1 + plen;
+    if (len < total_msg_len) return SOCKS5_AUTH; //its incomplete
+
+    // copying to the struct
+    memcpy(conn->username, ptr + 2, ulen);
+    conn->username[ulen] = '\0';
+
+    memcpy(conn->password, ptr + 2 + ulen + 1, plen);
+    conn->password[plen] = '\0';
+
+    buffer_read_adv(buffer, total_msg_len); //finish buffer usage
+
+    
+    int status = auth_validate_user(conn->username,conn->password);; // 0= SUCCESS;  1 = Fail
+
+    //send answer
+    uint8_t resp[2] = {SUBNEGOTIATION_VER , status};
+    if (send(key->fd, resp, 2, 0) == -1) {
+        fprintf(stderr, "[ERR] Send Error \n");
+        return SOCKS5_ERROR;
+    }
+
+    if (status != SUCCESS) {
+        fprintf(stderr, "[ERR] Invalid Password \n");
+        return SOCKS5_ERROR; // failed auth
+    }
+
+    // if auth its successful, awaits for request
+    selector_set_interest_key(key, OP_READ);
+    return SOCKS5_REQUEST;
 }
 
 /* -------- SOCKS5_REQUEST state handlers --------*/

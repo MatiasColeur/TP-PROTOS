@@ -77,5 +77,5 @@ bool auth_validate_user(const char *username, const char *password) {
     }
 
     fclose(file);
-    return found;
+    return !found; // SUCCESS = 0
 }

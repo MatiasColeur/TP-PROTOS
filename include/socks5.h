@@ -23,7 +23,10 @@
 #include "buffer.h"
 #include "auth.h"
 
+#define SUCCESS 0
 #define VER 5
+
+#define SUBNEGOTIATION_VER 1
 
 int handleClient(int clientSocket);
 
