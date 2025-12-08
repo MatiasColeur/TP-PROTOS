@@ -826,7 +826,7 @@ static unsigned hello_on_read(struct selector_key *key) {
         return SOCKS5_HELLO;  // esperar todos los métodos
     }
 
-    if (ver != 0x05) {
+    if (ver != VER) {
         (void) send(key->fd, "\x05\xff", 2, 0);  // versión no soportada
         buffer_read_adv(rb, 2 + nmethods);
         return SOCKS5_ERROR;
