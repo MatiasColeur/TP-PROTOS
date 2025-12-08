@@ -774,9 +774,7 @@ int handleUsernamePasswordAuth(int clientSocket, char * username, char * passwor
 }
 
 /* -------- SOCKS5_HELLO state handlers --------*/
-/**
- * 
- */
+
 static void hello_on_arrival(const unsigned state, struct selector_key *key) {
     socks5_connection_ptr conn = ATTACHMENT(key);
     (void) state;
@@ -794,9 +792,6 @@ static void hello_on_arrival(const unsigned state, struct selector_key *key) {
     // log_info("[SOCKS5] esperando HELLO en fd %d", key->fd);  
 }
 
-/**
- * @todo implement
- */
 static unsigned hello_on_read(struct selector_key *key) {
     /* recupero info de la conexion */
     socks5_connection_ptr conn = ATTACHMENT(key);
