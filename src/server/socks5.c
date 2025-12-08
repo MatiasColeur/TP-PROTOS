@@ -788,7 +788,10 @@ static void hello_on_arrival(const unsigned state, struct selector_key *key) {
     /* seteamos interes de lectura sobre el fd del cliente */
     selector_set_interest_key(key, OP_READ);
 
-    log_info("[SOCKS5] esperando HELLO en fd %d", key->fd);  
+    /**
+     * @todo implement logging
+     */
+    // log_info("[SOCKS5] esperando HELLO en fd %d", key->fd);  
 }
 
 /**
