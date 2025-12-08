@@ -941,9 +941,17 @@ static unsigned auth_on_read(struct selector_key *key) {
 /**
  * @todo implement
  */
-static void     request_on_arrival (const unsigned state, struct selector_key *key) {
-    
-    ;
+static void request_on_arrival(const unsigned state, struct selector_key *key) {
+    socks5_connection_ptr conn = ATTACHMENT(key);
+    (void) state;
+    if (buffer_can_read(&conn->client_read_buf)) {
+        buffer_compact(&conn->client_read_buf);
+    } else {
+        buffer_reset(&conn->client_read_buf);
+    }
+    buffer_reset(&conn->client_write_buf); // Reset write buffer
+
+    selector_set_interest_key(key, OP_READ);
 }
 /**
  * @todo implement
