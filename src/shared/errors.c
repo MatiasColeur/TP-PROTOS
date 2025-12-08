@@ -29,7 +29,7 @@ void log_success(const char *fmt, ...) {
     va_start(args, fmt);
 
     // Imprime [INF] en verde
-    fprintf(stdout, "%s[INF] ", COLOR_GREEN);
+    fprintf(stdout, "%s[SUC] ", COLOR_GREEN);
     vfprintf(stdout, fmt, args);
     fprintf(stdout, "%s\n", COLOR_RESET);
 

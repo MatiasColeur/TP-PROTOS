@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <errno.h>
+#include "../../include/errors.h"
 
 #define SERVER_IP "127.0.0.1"
 #define SERVER_PORT 1080
@@ -17,7 +18,7 @@ void perform_handshake(int sockfd) {
     // Según tu socks5.c, el servidor rechaza si no ve el método 0x02.
     char hello[] = { 0x05, 0x01, 0x02 };
     if (send(sockfd, hello, sizeof(hello), 0) < 0) {
-        perror("Error enviando hello");
+        log_error("Error sending Hello");
         exit(1);
     }
 
@@ -25,6 +26,7 @@ void perform_handshake(int sockfd) {
     ssize_t n = recv(sockfd, buf, BUFFER_SIZE, 0);
     if (n < 2 || buf[1] != 0x02) {
         fprintf(stderr, "Error: El servidor no aceptó autenticación User/Pass (0x02)\n");
+        log_error("Server didn't accept auth User/Pass");
         exit(1);
     }
     printf("[Info] Handshake inicial exitoso. Autenticando...\n");
@@ -49,9 +51,9 @@ void perform_handshake(int sockfd) {
     // 4. Recibir respuesta de autenticación
     n = recv(sockfd, buf, BUFFER_SIZE, 0);
     if (n >= 2 && buf[1] == 0x00) {
-        printf("[Exito] Autenticación completada.\n");
+        log_success("Authentication Completed");
     } else {
-        printf("[Fallo] Credenciales rechazadas.\n");
+        log_error("Authentication Rejected");
     }
 }
 
@@ -61,7 +63,7 @@ int main(int argc, char *argv[]) {
 
     // Crear socket TCP
     if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-        perror("Error creando socket");
+        log_error("Failed creating socket");
         return 1;
     }
 
@@ -69,13 +71,13 @@ int main(int argc, char *argv[]) {
     serv_addr.sin_port = htons(SERVER_PORT);
 
     if (inet_pton(AF_INET, SERVER_IP, &serv_addr.sin_addr) <= 0) {
-        perror("Dirección inválida");
+        log_error("Invalid direction");
         return 1;
     }
 
     // Conectar al servidor
     if (connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
-        perror("Error de conexión");
+        log_error("Connection Failed");
         return 1;
     }
 

@@ -805,6 +805,7 @@ static unsigned hello_on_read(struct selector_key *key) {
     uint8_t *wptr = buffer_write_ptr(rb, &n); // esta funcion encuentra un espacio contiguo de tam n para escribir en rb 
     ssize_t r = recv(key->fd, wptr, n, 0);   // lee desde el fd del cliente al buffer de recien 
     if (r <= 0) {
+        log_error("Invalid Connection");
         return SOCKS5_ERROR;  // error o cierre del cliente
     }
     buffer_write_adv(rb, r); // avanza el puntero de escritura del buffer 
@@ -825,6 +826,7 @@ static unsigned hello_on_read(struct selector_key *key) {
     if (ver != VER) {
         (void) send(key->fd, "\x05\xff", 2, 0);  // versión no soportada
         buffer_read_adv(rb, 2 + nmethods);
+        log_error("Invalid Version");
         return SOCKS5_ERROR;
     }
 
@@ -837,7 +839,7 @@ static unsigned hello_on_read(struct selector_key *key) {
         }
     }
 
-    uint8_t resp[2] = {0x05, has_userpass ? 0x02 : 0xff};
+    uint8_t resp[2] = {VER, has_userpass ? 0x02 : 0xff};
     (void) send(key->fd, resp, 2, 0); // responder al cliente con el método elegido
 
     buffer_read_adv(rb, 2 + nmethods); // avanza el puntero de lectura para descartar el saludo ya procesado
@@ -896,7 +898,7 @@ static unsigned auth_on_read(struct selector_key *key) {
     uint8_t ulen = ptr[1];
 
     if (ver != SUBNEGOTIATION_VER) {
-        log_error("Invalid Version");
+        log_error("Invalid Auth Negotiation Version");
         return SOCKS5_ERROR; //Invalid version
     }
     if (len < 2 + ulen + 1) return SOCKS5_AUTH; // its incomplete
@@ -921,7 +923,6 @@ static unsigned auth_on_read(struct selector_key *key) {
     //send answer
     uint8_t resp[2] = {SUBNEGOTIATION_VER , status};
     if (send(key->fd, resp, 2, 0) == -1) {
-        fprintf(stderr, "[ERR] Send Error \n");
         log_error("Send Error");
         return SOCKS5_ERROR;
     }
