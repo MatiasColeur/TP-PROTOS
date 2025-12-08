@@ -52,7 +52,7 @@ void fprint_error(FILE *fd, const char *fmt, ...) {
 void print_info(const char *fmt, ...) {
     va_list args;
     va_start(args, fmt);
-    v_print_format(stdout, NULL, "[INF]", fmt, args);
+    v_print_format(stdout, NULL, "[SUC]", fmt, args);
     va_end(args);
 }
 
@@ -78,4 +78,18 @@ void print_perror(const char *s) {
             s, 
             strerror(errnum), 
             COLOR_RESET);
+}
+
+void plain_fprint_success(FILE *fd,const char *fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    v_print_format(fd, NULL, "[SUC]", fmt, args);
+    va_end(args);
+}
+
+void plain_fprint_error(FILE *fd,const char *fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    v_print_format(fd, NULL, "[ERR]", fmt, args);
+    va_end(args);
 }

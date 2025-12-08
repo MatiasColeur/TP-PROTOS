@@ -36,4 +36,8 @@ void fprint_error(FILE *fd,const char *fmt, ...);
 
 void fprint_info(FILE *fd, const char *fmt, ...);
 
+void plain_fprint_success(FILE *fd,const char *fmt, ...);
+
+void plain_fprint_error(FILE *fd,const char *fmt, ...);
+
 #endif

@@ -30,10 +30,10 @@ void log_info(const char *fmt){
     fclose(logFile);
 }
 
-void log_succes(const char *fmt){
+void log_success(const char *fmt){
     FILE * logFile = get_file(LOGS_FILE);
 
-    fprint_success(logFile,fmt);
+    plain_fprint_success(logFile,fmt);
 
     fclose(logFile);
 }
