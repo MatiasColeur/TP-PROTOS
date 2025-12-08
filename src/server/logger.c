@@ -1,9 +1,10 @@
 #include "../../include/logger.h"
+#include "../../include/errors.h"
 
 void logAccess(char * username, char * password, char * hostname, int port) {
     FILE * logFile = fopen("log/access.txt", "a");
     if (!logFile) {
-        perror("[ERR] Coldn't open the log file");
+        log_error("Couldn't open the log file");
         return;
     }
 
@@ -14,4 +15,3 @@ void logAccess(char * username, char * password, char * hostname, int port) {
     fprintf(logFile, "[%s] - %s:%s - Connected to %s port %d\n", timestamp, username, password, hostname, port);
     fclose(logFile);
 }
-

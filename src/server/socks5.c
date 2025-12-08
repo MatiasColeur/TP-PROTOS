@@ -1,4 +1,5 @@
 #include "../../include/socks5.h"
+#include "../../include/errors.h"
 
 #define BUFFER_SIZE         4096
 
@@ -881,7 +882,7 @@ static unsigned auth_on_read(struct selector_key *key) {
     ssize_t n = recv(key->fd, wptr, count, 0);//writes from socket to buffer
 
     if (n <= 0) {       // connection validation
-        fprintf(stderr, "[ERR] Invalid Connection \n");
+        log_error("Invalid Connection");
         return SOCKS5_ERROR;
     }
     buffer_write_adv(buffer, n);
@@ -895,7 +896,7 @@ static unsigned auth_on_read(struct selector_key *key) {
     uint8_t ulen = ptr[1];
 
     if (ver != SUBNEGOTIATION_VER) {
-        fprintf(stderr, "[ERR] Invalid Version \n");
+        log_error("Invalid Version");
         return SOCKS5_ERROR; //Invalid version
     }
     if (len < 2 + ulen + 1) return SOCKS5_AUTH; // its incomplete
@@ -921,11 +922,12 @@ static unsigned auth_on_read(struct selector_key *key) {
     uint8_t resp[2] = {SUBNEGOTIATION_VER , status};
     if (send(key->fd, resp, 2, 0) == -1) {
         fprintf(stderr, "[ERR] Send Error \n");
+        log_error("Send Error");
         return SOCKS5_ERROR;
     }
 
     if (status != SUCCESS) {
-        fprintf(stderr, "[ERR] Invalid Password \n");
+        log_error("Invalid Password");
         return SOCKS5_ERROR; // failed auth
     }
 
