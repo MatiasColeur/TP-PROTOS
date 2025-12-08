@@ -18,7 +18,7 @@ void perform_handshake(int sockfd) {
     // Según tu socks5.c, el servidor rechaza si no ve el método 0x02.
     char hello[] = { 0x05, 0x01, 0x02 };
     if (send(sockfd, hello, sizeof(hello), 0) < 0) {
-        log_error("Error sending Hello");
+        print_error("Error sending Hello");
         exit(1);
     }
 
@@ -26,7 +26,7 @@ void perform_handshake(int sockfd) {
     ssize_t n = recv(sockfd, buf, BUFFER_SIZE, 0);
     if (n < 2 || buf[1] != 0x02) {
         fprintf(stderr, "Error: El servidor no aceptó autenticación User/Pass (0x02)\n");
-        log_error("Server didn't accept auth User/Pass");
+        print_error("Server didn't accept auth User/Pass");
         exit(1);
     }
     printf("[Info] Handshake inicial exitoso. Autenticando...\n");
@@ -51,9 +51,9 @@ void perform_handshake(int sockfd) {
     // 4. Recibir respuesta de autenticación
     n = recv(sockfd, buf, BUFFER_SIZE, 0);
     if (n >= 2 && buf[1] == 0x00) {
-        log_success("Authentication Completed");
+        print_success("Authentication Completed");
     } else {
-        log_error("Authentication Rejected");
+        print_error("Authentication Rejected");
     }
 }
 
@@ -63,7 +63,7 @@ int main(int argc, char *argv[]) {
 
     // Crear socket TCP
     if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-        log_error("Failed creating socket");
+        print_error("Failed creating socket");
         return 1;
     }
 
@@ -71,13 +71,13 @@ int main(int argc, char *argv[]) {
     serv_addr.sin_port = htons(SERVER_PORT);
 
     if (inet_pton(AF_INET, SERVER_IP, &serv_addr.sin_addr) <= 0) {
-        log_error("Invalid direction");
+        print_error("Invalid direction");
         return 1;
     }
 
     // Conectar al servidor
     if (connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
-        log_error("Connection Failed");
+        print_error("Connection Failed");
         return 1;
     }
 
