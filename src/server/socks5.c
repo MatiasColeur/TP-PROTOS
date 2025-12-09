@@ -1453,6 +1453,7 @@ socks5_close(struct selector_key *key) {
 
     if (other_fd != -1) {
         selector_unregister_fd(key->s, other_fd);
+        return;
     }
     //finish if both are closed
     if (conn->client_fd == -1 && conn->remote_fd == -1) {
