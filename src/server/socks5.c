@@ -1076,7 +1076,7 @@ static void connect_on_arrival(const unsigned state, struct selector_key *key) {
     // original key will disapear
     struct selector_key *k = malloc(sizeof(*key));
     if (k == NULL) {
-        conn->connect_status = 0x01; // Error interno
+        conn->connect_status = HOST_NOT_FOUND; // Error interno
         selector_set_interest_key(key, OP_WRITE);
         conn->stm.current = &socks5_states[SOCKS5_REPLY]; // Salto de emergencia
         return;
@@ -1102,7 +1102,7 @@ static unsigned connect_on_block(struct selector_key *key) {
     socks5_connection_ptr conn = ATTACHMENT(key);
 
     // Verify dns results
-    if (conn->connect_status != 0) {
+    if (conn->connect_status != SUCCESS) {
         print_error("Error using DNS: %d", conn->connect_status);
         return SOCKS5_REPLY;
     }
@@ -1147,7 +1147,7 @@ static unsigned connect_on_block(struct selector_key *key) {
     if (ss != SELECTOR_SUCCESS) {
         close(conn->remote_fd);
         conn->remote_fd = -1;
-        conn->connect_status = 0x01;
+        conn->connect_status = HOST_NOT_FOUND;
         return SOCKS5_REPLY;
     }
 
@@ -1240,8 +1240,9 @@ static void reply_on_arrival(const unsigned state, struct selector_key *key) {
     } else {
         print_error("Buffer overflow");
     }
-
-    selector_set_interest_key(key, OP_WRITE);
+    selector_set_interest(key->s, conn->client_fd, OP_WRITE);
+    
+    selector_set_interest(key->s, conn->remote_fd, OP_NOOP);
 }
 
 static unsigned reply_on_write(struct selector_key *key) {
