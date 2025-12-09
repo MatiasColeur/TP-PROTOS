@@ -1056,7 +1056,7 @@ static void * resolution_thread(void *arg) {
 
     // save the result or error
     if (err != 0) {
-        conn->connect_status = (err == EAI_NONAME) ? HOST_UNREACHABLE : HOST_NOT_FOUND; 
+        conn->connect_status = errno_to_socks_status(err); 
     } else {
         conn->connect_status = SUCCESS; // 0 success
     }
@@ -1076,7 +1076,7 @@ static void connect_on_arrival(const unsigned state, struct selector_key *key) {
     // original key will disapear
     struct selector_key *k = malloc(sizeof(*key));
     if (k == NULL) {
-        conn->connect_status = HOST_NOT_FOUND; // Error interno
+        conn->connect_status = STATUS_GENERAL_SERVER_FAILURE; // Error interno
         selector_set_interest_key(key, OP_WRITE);
         conn->stm.current = &socks5_states[SOCKS5_REPLY]; // Salto de emergencia
         return;
@@ -1088,7 +1088,7 @@ static void connect_on_arrival(const unsigned state, struct selector_key *key) {
     if (pthread_create(&tid, NULL, resolution_thread, k) != 0) {
         print_error("Failed creating thread");
         free(k);
-        conn->connect_status = HOST_NOT_FOUND;
+        conn->connect_status = STATUS_GENERAL_SERVER_FAILURE;
         // Force reply to report error
         selector_set_interest_key(key, OP_WRITE);
         return;
@@ -1136,7 +1136,7 @@ static unsigned connect_on_block(struct selector_key *key) {
     conn->addr_next = rp;
 
     if (sock == -1) {
-        conn->connect_status = CONNECTION_REFUSED;
+        conn->connect_status = STATUS_CONNECTION_REFUSED;
         return SOCKS5_REPLY;
     }
 
@@ -1147,7 +1147,7 @@ static unsigned connect_on_block(struct selector_key *key) {
     if (ss != SELECTOR_SUCCESS) {
         close(conn->remote_fd);
         conn->remote_fd = -1;
-        conn->connect_status = HOST_NOT_FOUND;
+        conn->connect_status = STATUS_GENERAL_SERVER_FAILURE;
         return SOCKS5_REPLY;
     }
 
@@ -1174,7 +1174,7 @@ static unsigned connect_on_write(struct selector_key *key) {
             selector_unregister_fd(key->s, conn->remote_fd);
             close(conn->remote_fd);
             conn->remote_fd = -1;
-            conn->connect_status = CONNECTION_REFUSED;
+            conn->connect_status = errno_to_socks_status(error);
             return SOCKS5_REPLY;
         }
     }
@@ -1284,7 +1284,7 @@ static void relay_on_arrival(const unsigned state, struct selector_key *key) {
     socks5_connection_ptr conn = ATTACHMENT(key);
     (void) state;
 
-    print_success("Túnel establecido: %d <-> %d", conn->client_fd, conn->remote_fd);
+    print_success("Tunnel Established: %d <-> %d", conn->client_fd, conn->remote_fd);
     fd_interest client_int = OP_READ;
     fd_interest remote_int = OP_READ;
 
@@ -1541,5 +1541,18 @@ socks5_kill_connection(socks5_connection_ptr conn) {
         }
 
         free(conn);
+    }
+}
+
+static uint8_t errno_to_socks_status(int err) {
+    switch (err) {
+        case 0: return STATUS_SUCCEDED;
+        case ECONNREFUSED: return STATUS_CONNECTION_REFUSED;
+        case EHOSTUNREACH: return STATUS_HOST_UNREACHABLE;
+        case ENETUNREACH:  return STATUS_NETWORK_UNREACHABLE;
+        case ETIMEDOUT:    return STATUS_HOST_UNREACHABLE; // O TTL expired
+        case ENETDOWN:     return STATUS_NETWORK_UNREACHABLE;
+        case EADDRNOTAVAIL: return STATUS_ADDRESS_TYPE_NOT_SUPPORTED;
+        default:           return STATUS_GENERAL_SERVER_FAILURE;
     }
 }

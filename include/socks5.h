@@ -47,4 +47,17 @@ int handleConnectionData(int clientSocket, int remoteSocket);
 int handleUsernamePasswordAuth(int clientSocket, char * username, char * password, size_t maxLen);
 bool authenticateUser(int clientSocket);
 
+enum socks_reply_status {
+    STATUS_SUCCEDED       = 0x00,
+    STATUS_GENERAL_SERVER_FAILURE = 0x01,
+    STATUS_CONNECTION_NOT_ALLOWED = 0x02,
+    STATUS_NETWORK_UNREACHABLE    = 0x03,
+    STATUS_HOST_UNREACHABLE       = 0x04,
+    STATUS_CONNECTION_REFUSED     = 0x05,
+    STATUS_TTL_EXPIRED            = 0x06,
+    STATUS_COMMAND_NOT_SUPPORTED  = 0x07,
+    STATUS_ADDRESS_TYPE_NOT_SUPPORTED = 0x08,
+};
+
+static uint8_t errno_to_socks_status(int err);
 #endif
