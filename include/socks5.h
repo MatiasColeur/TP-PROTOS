@@ -15,6 +15,7 @@
 #include <unistd.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <pthread.h>
 
 #include "util.h"
 #include "logger.h"
@@ -27,6 +28,10 @@
 #define IPV4_N 1
 #define FQDN_N 3
 #define IPV6_N 4
+
+//Connect Status
+#define CONNECTION_REFUSED 5
+#define HOST_UNREACHABLE 4
 
 
 #define VER 5

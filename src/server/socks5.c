@@ -708,7 +708,6 @@ int handleConnectionData(int clientSocket, int remoteSocket) {
 
 /**
  * @deprecated
- * @todo refactor into SOCKS5_AUTH state handlers
  */
 int handleUsernamePasswordAuth(int clientSocket, char * username, char * password, size_t maxLen) {
     char buffer[BUFFER_SIZE + 1];
@@ -853,9 +852,7 @@ static unsigned hello_on_read(struct selector_key *key) {
 
 
 /* -------- SOCKS5_AUTH state handlers --------*/
-/**
- * @todo implement
- */
+
 static void auth_on_arrival(const unsigned state, struct selector_key *key) {
     socks5_connection_ptr conn = ATTACHMENT(key);
     (void) state;
@@ -870,7 +867,6 @@ static void auth_on_arrival(const unsigned state, struct selector_key *key) {
     selector_set_interest_key(key, OP_READ); // Indicates read in the socket
 }
 /**
- * @todo implement
  * @brief reads and process the message from auth user/password
  * format: VER (1) | ULEN (1) | UNAME (Var) | PLEN (1) | PASSWD (Var)
  */
@@ -937,9 +933,6 @@ static unsigned auth_on_read(struct selector_key *key) {
 }
 
 /* -------- SOCKS5_REQUEST state handlers --------*/
-/**
- * @todo implement
- */
 static void request_on_arrival(const unsigned state, struct selector_key *key) {
     socks5_connection_ptr conn = ATTACHMENT(key);
     (void) state;
@@ -952,9 +945,7 @@ static void request_on_arrival(const unsigned state, struct selector_key *key) {
 
     selector_set_interest_key(key, OP_READ);
 }
-/**
- * @todo implement
- */
+
 static unsigned request_on_read(struct selector_key *key) {
     socks5_connection_ptr conn = ATTACHMENT(key);
     buffer *b = &conn->client_read_buf;
@@ -1033,12 +1024,77 @@ static unsigned request_on_read(struct selector_key *key) {
 }
 
 /* -------- SOCKS5_CONNECT state handlers --------*/
+
+//thread function
+static void * resolution_thread(struct selector_key *key) {
+    socks5_connection_ptr conn = ATTACHMENT(key);
+
+    pthread_detach(pthread_self()); 
+
+    struct addrinfo hints = {
+        .ai_family   = AF_UNSPEC,
+        .ai_socktype = SOCK_STREAM,
+        .ai_flags    = AI_PASSIVE,
+        .ai_protocol = 0
+    };
+
+    char port_str[8];
+    snprintf(port_str, sizeof(port_str), "%d", conn->port);
+
+    // delete prev results
+    if (conn->addr_list != NULL) {
+        freeaddrinfo(conn->addr_list);
+        conn->addr_list = NULL;
+    }
+
+    // get host addresses
+    int err = getaddrinfo(conn->host, port_str, &hints, &conn->addr_list);
+
+    // save the result or error
+    if (err != 0) {
+        conn->connect_status = (err == EAI_NONAME) ? HOST_UNREACHABLE : HOST_NOT_FOUND; 
+    } else {
+        conn->connect_status = SUCCESS; // 0 success
+    }
+    // notify principal thread
+    selector_notify_block(key->s, key->fd);
+
+    free(key); //free key created in connect_on_arrival
+
+    return NULL;
+}
+
+
 /**
  * @todo implement
  */
-static void     connect_on_arrival (const unsigned state, struct selector_key *key) {
-    
-    ;
+static void connect_on_arrival(const unsigned state, struct selector_key *key) {
+    socks5_connection_ptr conn = ATTACHMENT(key);
+    (void) state;
+
+    // original key will disapear
+    struct selector_key *k = malloc(sizeof(*key));
+    if (k == NULL) {
+        conn->connect_status = 0x01; // Error interno
+        selector_set_interest_key(key, OP_WRITE);
+        conn->stm.current = &socks5_states[SOCKS5_REPLY]; // Salto de emergencia
+        return;
+    }
+    *k = *key;
+
+    pthread_t tid;
+    // new thread
+    if (pthread_create(&tid, NULL, resolution_thread, k) != 0) {
+        print_error("Fallo al crear hilo de resolución");
+        free(k);
+        conn->connect_status = HOST_NOT_FOUND;
+        // Force reply to report error
+        selector_set_interest_key(key, OP_WRITE);
+        return;
+    }
+
+    // pause socket while finishing thread
+    selector_set_interest_key(key, OP_NOOP);
 }
 /**
  * @todo implement

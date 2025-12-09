@@ -66,7 +66,7 @@ void perform_request(int sockfd) {
     char target_host[] = "google.com";
     int target_port = 80;
 
-    printf("[Info] Enviando Request CONNECT a %s:%d...\n", target_host, target_port);
+    print_info("Enviando Request CONNECT a %s:%d...\n", target_host, target_port);
 
     // Construcción del paquete REQUEST
     // VER | CMD | RSV | ATYP | DST.ADDR | DST.PORT
@@ -113,7 +113,7 @@ void perform_request(int sockfd) {
  * Envía datos a través del túnel establecido para probar la conexión
  */
 void test_tunnel(int sockfd) {
-    printf("[Info] Enviando HTTP GET a google.com a través del túnel...\n");
+    print_info("Enviando HTTP GET a google.com a través del túnel...");
     
     char http_msg[] = "GET / HTTP/1.1\r\nHost: google.com\r\nConnection: close\r\n\r\n";
     
@@ -125,14 +125,12 @@ void test_tunnel(int sockfd) {
     // Leemos la respuesta en bucle
     char buf[BUFFER_SIZE + 1];
     ssize_t n;
-    printf("[Info] Respuesta recibida del destino:\n");
-    printf("------------------------------------------------\n");
+    print_info("Respuesta recibida del destino:");
     while ((n = recv(sockfd, buf, BUFFER_SIZE, 0)) > 0) {
         buf[n] = '\0';
         printf("%s", buf);
     }
-    printf("\n------------------------------------------------\n");
-    printf("[Info] Conexión cerrada por el extremo remoto.\n");
+    print_info("Conexión cerrada por el extremo remoto.");
 }
 
 int main(int argc, char *argv[]) {
@@ -154,7 +152,7 @@ int main(int argc, char *argv[]) {
     }
 
     // 2. Conectar al servidor SOCKS5
-    printf("[Info] Conectando al Proxy SOCKS5 en %s:%d...\n", SERVER_IP, SERVER_PORT);
+    print_info("Conectando al Proxy SOCKS5 en %s:%d...\n", SERVER_IP, SERVER_PORT);
     if (connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
         print_error("Connection Failed (Is the server running?)");
         return 1;
