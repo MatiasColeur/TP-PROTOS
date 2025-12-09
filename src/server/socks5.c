@@ -1278,12 +1278,22 @@ static unsigned reply_on_write(struct selector_key *key) {
 }
 
 /* -------- SOCKS5_RELAY state handlers --------*/
-/**
- * @todo implement
- */
-static void     relay_on_arrival   (const unsigned state, struct selector_key *key) {
-    
-    ;
+
+static void relay_on_arrival(const unsigned state, struct selector_key *key) {
+    socks5_connection_ptr conn = ATTACHMENT(key);
+    (void) state;
+
+    print_success("Túnel establecido: %d <-> %d", conn->client_fd, conn->remote_fd);
+    fd_interest client_int = OP_READ;
+    fd_interest remote_int = OP_READ;
+
+    // Verify if there are data
+    if (buffer_can_read(&conn->client_read_buf)) {
+        remote_int |= OP_WRITE;
+    }
+
+    selector_set_interest(key->s, conn->client_fd, client_int);
+    selector_set_interest(key->s, conn->remote_fd, remote_int);
 }
 
 /**
