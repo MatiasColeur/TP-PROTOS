@@ -1348,12 +1348,40 @@ static unsigned relay_on_read(struct selector_key *key) {
 
     return SOCKS5_RELAY;
 }
-/**
- * @todo implement
- */
-static unsigned relay_on_write     (struct selector_key *key) {
 
-    return 0;
+static unsigned relay_on_write(struct selector_key *key) {
+    socks5_connection_ptr conn = ATTACHMENT(key);
+    buffer *b_write;
+    int other_fd;
+
+    if (key->fd == conn->client_fd) {
+        b_write = &conn->remote_read_buf;
+        other_fd = conn->remote_fd;
+    } else {
+        b_write = &conn->client_read_buf;
+        other_fd = conn->client_fd;
+    }
+
+    size_t size;
+    uint8_t *ptr = buffer_read_ptr(b_write, &size);
+    ssize_t n = send(key->fd, ptr, size, MSG_NOSIGNAL);
+
+    if (n > 0) {
+        buffer_read_adv(b_write, n);
+        selector_set_interest(key->s, other_fd, OP_READ | OP_WRITE); // Activamos lectura en origen
+
+        if (!buffer_can_read(b_write)) {
+            selector_set_interest_key(key, OP_READ);
+        }
+
+    } else if (n == -1) {
+        if (errno != EAGAIN && errno != EWOULDBLOCK) {
+            print_error("Error in tunnel send: %s", strerror(errno));
+            return SOCKS5_DONE;
+        }
+    }
+
+    return SOCKS5_RELAY;
 }
 
 /* -------- SOCKS5_DONE state handlers --------*/
