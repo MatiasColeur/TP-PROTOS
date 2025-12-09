@@ -1390,10 +1390,13 @@ static unsigned relay_on_write(struct selector_key *key) {
 /**
  * @note handle_close() will take care of cleaning up the connection.
  */
-static void     done_on_arrival    (const unsigned state, struct selector_key *key) {
-    
+static void done_on_arrival(const unsigned state, struct selector_key *key) {
     (void) state;
-    selector_unregister_fd(key->s, key->fd);
+    
+    // this calls socks5_close
+    if (key->fd != -1) {
+        selector_unregister_fd(key->s, key->fd);
+    }
 }
 
 /* -------- SOCKS5_ERROR state handlers --------*/
@@ -1428,13 +1431,30 @@ socks5_block(struct selector_key *key) {
     stm_handler_block(&conn->stm, key);
 }
 
-static void
+static void 
 socks5_close(struct selector_key *key) {
-    struct socks5_connection *conn = ATTACHMENT(key);
+    socks5_connection_ptr conn = ATTACHMENT(key);
 
     stm_handler_close(&conn->stm, key);
 
-    socks5_kill_connection(conn);
+    if (key->fd == conn->client_fd) {
+        conn->client_fd = -1;
+    } else if (key->fd == conn->remote_fd) {
+        conn->remote_fd = -1;
+    }
+
+    // verify if theres another socket open
+    int other_fd = -1;
+    if (conn->client_fd != -1) other_fd = conn->client_fd;
+    else if (conn->remote_fd != -1) other_fd = conn->remote_fd;
+
+    if (other_fd != -1) {
+        selector_unregister_fd(key->s, other_fd);
+    }
+    //finish if both are closed
+    if (conn->client_fd == -1 && conn->remote_fd == -1) {
+        socks5_kill_connection(conn);
+    }
 }
 
 /* -------- handle_new_connection() auxiliares -------- */
