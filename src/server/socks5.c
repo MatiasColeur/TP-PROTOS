@@ -1065,9 +1065,6 @@ static void * resolution_thread(struct selector_key *key) {
 }
 
 
-/**
- * @todo implement
- */
 static void connect_on_arrival(const unsigned state, struct selector_key *key) {
     socks5_connection_ptr conn = ATTACHMENT(key);
     (void) state;
@@ -1085,7 +1082,7 @@ static void connect_on_arrival(const unsigned state, struct selector_key *key) {
     pthread_t tid;
     // new thread
     if (pthread_create(&tid, NULL, resolution_thread, k) != 0) {
-        print_error("Fallo al crear hilo de resolución");
+        print_error("Failed creating thread");
         free(k);
         conn->connect_status = HOST_NOT_FOUND;
         // Force reply to report error
@@ -1096,12 +1093,61 @@ static void connect_on_arrival(const unsigned state, struct selector_key *key) {
     // pause socket while finishing thread
     selector_set_interest_key(key, OP_NOOP);
 }
-/**
- * @todo implement
- */
-static unsigned connect_on_block   (struct selector_key *key) {
 
-    return 0;
+static unsigned connect_on_block(struct selector_key *key) {
+    socks5_connection_ptr conn = ATTACHMENT(key);
+
+    // 1. Verificar resultado de DNS
+    if (conn->connect_status != 0) {
+        print_error("Error using DNS: %d", conn->connect_status);
+        return SOCKS5_REPLY;
+    }
+
+    conn->addr_next = conn->addr_list; 
+
+    int sock = -1;
+    struct addrinfo *rp;
+    //trying to conect to the posibles ips
+    for (rp = conn->addr_next; rp != NULL; rp = rp->ai_next) {
+        sock = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+        if (sock == -1) continue;
+
+        if (selector_fd_set_nio(sock) == -1) {
+            close(sock);
+            continue;
+        }
+
+        if (connect(sock, rp->ai_addr, rp->ai_addrlen) == -1) {
+            if (errno == EINPROGRESS) {
+                // success
+                break;
+            } else {
+                close(sock);
+                sock = -1;
+            }
+        } else {
+            break;
+        }
+    }
+    conn->addr_next = rp;
+
+    if (sock == -1) {
+        conn->connect_status = CONNECTION_REFUSED;
+        return SOCKS5_REPLY;
+    }
+
+    conn->remote_fd = sock;
+    
+    selector_status ss = selector_register(key->s, conn->remote_fd, &socks5_handler, OP_WRITE, conn);
+    
+    if (ss != SELECTOR_SUCCESS) {
+        close(conn->remote_fd);
+        conn->remote_fd = -1;
+        conn->connect_status = 0x01;
+        return SOCKS5_REPLY;
+    }
+
+    return SOCKS5_CONNECT; // stay in connect
 }
 
 /* -------- SOCKS5_REPLY state handlers --------*/
