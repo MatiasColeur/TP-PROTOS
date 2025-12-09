@@ -1404,11 +1404,14 @@ static void done_on_arrival(const unsigned state, struct selector_key *key) {
 /**
  * @note handle_close() will take care of cleaning up the connection.
  */
-static void     error_on_arrival   (const unsigned state, struct selector_key *key) {
-    
+static void error_on_arrival(const unsigned state, struct selector_key *key) {
     (void) state;
-    fprintf(stderr, "[ERR] echo: error state on fd %d, closing...\n", key->fd);
-    selector_unregister_fd(key->s, key->fd);
+    
+    print_error("Error state on fd %d, closing...\n", key->fd);
+    
+    if (key->fd != -1) {
+        selector_unregister_fd(key->s, key->fd);
+    }
 }
 
 /* -------- per-state handlers -------- */
