@@ -52,14 +52,14 @@ void fprint_error(FILE *fd, const char *fmt, ...) {
 void print_info(const char *fmt, ...) {
     va_list args;
     va_start(args, fmt);
-    v_print_format(stdout, NULL, "[SUC]", fmt, args);
+    v_print_format(stdout, NULL, "[INF]", fmt, args);
     va_end(args);
 }
 
 void print_success(const char *fmt, ...) {
     va_list args;
     va_start(args, fmt);
-    v_print_format(stdout, COLOR_GREEN, "[INF]", fmt, args);
+    v_print_format(stdout, COLOR_GREEN, "[SUC]", fmt, args);
     va_end(args);
 }
 

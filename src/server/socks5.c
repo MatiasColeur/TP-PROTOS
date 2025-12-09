@@ -1329,35 +1329,19 @@ static void     error_on_arrival   (const unsigned state, struct selector_key *k
 static void
 socks5_read(struct selector_key *key) {
     struct socks5_connection *conn = ATTACHMENT(key);
-
-    // Delega la lógica al estado actual
-    const fd_interest interest = stm_handler_read(&conn->stm, key);
-
-    if(interest != OP_NOOP) {
-        selector_set_interest_key(key, interest);
-    }
+    stm_handler_read(&conn->stm, key);
 }
 
 static void
 socks5_write(struct selector_key *key) {
     struct socks5_connection *conn = ATTACHMENT(key);
-
-    const fd_interest interest = stm_handler_write(&conn->stm, key);
-
-    if(interest != OP_NOOP) {
-        selector_set_interest_key(key, interest);
-    }
+    stm_handler_write(&conn->stm, key);
 }
 
 static void
 socks5_block(struct selector_key *key) {
     struct socks5_connection *conn = ATTACHMENT(key);
-
-    const fd_interest interest = stm_handler_block(&conn->stm, key);
-
-    if(interest != OP_NOOP) {
-        selector_set_interest_key(key, interest);
-    }
+    stm_handler_block(&conn->stm, key);
 }
 
 static void
