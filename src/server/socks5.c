@@ -1181,12 +1181,65 @@ static unsigned connect_on_write(struct selector_key *key) {
 }
 
 /* -------- SOCKS5_REPLY state handlers --------*/
-/**
- * @todo implement
- */
-static void     reply_on_arrival   (const unsigned state, struct selector_key *key) {
+
+static void reply_on_arrival(const unsigned state, struct selector_key *key) {
+    socks5_connection_ptr conn = ATTACHMENT(key);
+    (void) state;
+
+    buffer_reset(&conn->client_write_buf);
+
+    // Variables para armar la respuesta (Valores por defecto para error: 0.0.0.0:0)
+    uint8_t atyp = 0x01;        // IPv4
+    uint8_t bnd_addr[16] = {0};
+    uint8_t bnd_port[2] = {0};
+    size_t addr_len = 4;
+
     
-    ;
+    if (conn->connect_status == SUCCESS && conn->remote_fd != -1) {
+        struct sockaddr_storage local_addr;
+        socklen_t len = sizeof(local_addr);
+        
+        if (getsockname(conn->remote_fd, (struct sockaddr *)&local_addr, &len) == 0) {
+            if (local_addr.ss_family == AF_INET) {
+                struct sockaddr_in *s = (struct sockaddr_in *)&local_addr;
+                atyp = IPV4_N;
+                addr_len = 4;
+                memcpy(bnd_addr, &s->sin_addr, 4);
+                memcpy(bnd_port, &s->sin_port, 2);
+            } else if (local_addr.ss_family == AF_INET6) {
+                struct sockaddr_in6 *s = (struct sockaddr_in6 *)&local_addr;
+                atyp = IPV6_N;
+                addr_len = 16;
+                memcpy(bnd_addr, &s->sin6_addr, 16);
+                memcpy(bnd_port, &s->sin6_port, 2);
+            }
+        }
+    }
+    // Format: VER(1) | REP(1) | RSV(1) | ATYP(1) | BND.ADDR(Var) | BND.PORT(2)
+    size_t required = 4 + addr_len + 2;
+    size_t space;
+    uint8_t *ptr = buffer_write_ptr(&conn->client_write_buf, &space);
+
+    if (space >= required) {
+        ptr[0] = VER;                  // VER
+        ptr[1] = conn->connect_status;  // REP (0x00 = Success, others = Error)
+        ptr[2] = 0x00;                  // RSV
+        ptr[3] = atyp;                  // ATYP
+        memcpy(ptr + 4, bnd_addr, addr_len);
+        memcpy(ptr + 4 + addr_len, bnd_port, 2);
+        
+        buffer_write_adv(&conn->client_write_buf, required);
+        
+        if (conn->connect_status == SUCCESS) {
+            print_success("Reply: Success");
+        } else {
+            print_error("Reply: Error (0x%02x)", conn->connect_status);
+        }
+    } else {
+        print_error("Buffer overflow");
+    }
+
+    selector_set_interest_key(key, OP_WRITE);
 }
 /**
  * @todo implement
