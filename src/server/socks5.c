@@ -1296,12 +1296,57 @@ static void relay_on_arrival(const unsigned state, struct selector_key *key) {
     selector_set_interest(key->s, conn->remote_fd, remote_int);
 }
 
-/**
- * @todo implement
- */
-static unsigned relay_on_read      (struct selector_key *key) {
+static unsigned relay_on_read(struct selector_key *key) {
+    socks5_connection_ptr conn = ATTACHMENT(key);
+    buffer *b_read;
+    int other_fd;
 
-    return 0;
+    // 1. Identificar quién envía datos (Origen) y quién los recibe (Destino)
+    if (key->fd == conn->client_fd) {
+        b_read = &conn->client_read_buf;
+        other_fd = conn->remote_fd;
+    } else {
+        b_read = &conn->remote_read_buf;
+        other_fd = conn->client_fd;
+    }
+
+    // 2. Intentar leer del socket origen
+    size_t size;
+    uint8_t *ptr = buffer_write_ptr(b_read, &size);
+    ssize_t n = recv(key->fd, ptr, size, 0);
+
+    if (n > 0) {
+        // Success
+        buffer_write_adv(b_read, n);
+
+        // Set write in the other socket
+        selector_set_interest(key->s, other_fd, OP_WRITE | OP_READ);
+
+        if (!buffer_can_write(b_read)) {
+            selector_set_interest_key(key, OP_NOOP); // Simplificación: pausar lectura
+        }
+
+    } else if (n == 0) {
+        // EOF
+        shutdown(other_fd, SHUT_WR);
+        
+        selector_set_interest_key(key, OP_NOOP);
+        if (key->fd == conn->client_fd) conn->client_closed = true;
+        else conn->remote_closed = true;
+
+        if (conn->client_closed && conn->remote_closed) {
+            return SOCKS5_DONE;
+        }
+
+    } else {
+        // ERROR: recv got -1
+        if (errno != EAGAIN && errno != EWOULDBLOCK) {
+            print_error("Error en túnel recv: %s", strerror(errno));
+            return SOCKS5_DONE;
+        }
+    }
+
+    return SOCKS5_RELAY;
 }
 /**
  * @todo implement
