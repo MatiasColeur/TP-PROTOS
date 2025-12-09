@@ -196,6 +196,7 @@ static unsigned request_on_read    (struct selector_key *key);
 
 static void     connect_on_arrival (const unsigned state, struct selector_key *key);
 static unsigned connect_on_block   (struct selector_key *key);
+static unsigned connect_on_write(struct selector_key *key);
 
 static void     reply_on_arrival   (const unsigned state, struct selector_key *key);
 static unsigned reply_on_write     (struct selector_key *key);
@@ -235,6 +236,7 @@ static const struct state_definition socks5_states[] = {
         .state          = SOCKS5_CONNECT,
         .on_arrival     = connect_on_arrival,
         .on_block_ready = connect_on_block,
+        .on_write_ready = connect_on_write,
     },
 
     [SOCKS5_REPLY] = {
@@ -1097,7 +1099,7 @@ static void connect_on_arrival(const unsigned state, struct selector_key *key) {
 static unsigned connect_on_block(struct selector_key *key) {
     socks5_connection_ptr conn = ATTACHMENT(key);
 
-    // 1. Verificar resultado de DNS
+    // Verify dns results
     if (conn->connect_status != 0) {
         print_error("Error using DNS: %d", conn->connect_status);
         return SOCKS5_REPLY;
@@ -1148,6 +1150,34 @@ static unsigned connect_on_block(struct selector_key *key) {
     }
 
     return SOCKS5_CONNECT; // stay in connect
+}
+
+static unsigned connect_on_write(struct selector_key *key) {
+    socks5_connection_ptr conn = ATTACHMENT(key);
+
+    // if the event comes from the remote socket, its confirms connect()
+    if (key->fd == conn->remote_fd) {
+        int error = 0;
+        socklen_t len = sizeof(error);
+        
+        getsockopt(conn->remote_fd, SOL_SOCKET, SO_ERROR, &error, &len);
+
+        if (error == 0) {
+            conn->connect_status =SUCCESS; 
+            
+            selector_set_interest_key(key, OP_NOOP);
+            return SOCKS5_REPLY;
+        } else {
+            print_error("Failed connecting: %s", strerror(error));
+            selector_unregister_fd(key->s, conn->remote_fd);
+            close(conn->remote_fd);
+            conn->remote_fd = -1;
+            conn->connect_status = CONNECTION_REFUSED;
+            return SOCKS5_REPLY;
+        }
+    }
+
+    return SOCKS5_CONNECT;
 }
 
 /* -------- SOCKS5_REPLY state handlers --------*/
