@@ -24,8 +24,13 @@
 #include "auth.h"
 
 #define SUCCESS 0
-#define VER 5
+#define IPV4_N 1
+#define FQDN_N 3
+#define IPV6_N 4
 
+
+#define VER 5
+#define CMD 1
 #define SUBNEGOTIATION_VER 1
 
 int handleClient(int clientSocket);

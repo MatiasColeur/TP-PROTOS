@@ -518,7 +518,6 @@ int handleRequest(int clientSocket, struct addrinfo** connectAddresses, int * cl
         strncpy(clientHostname, hostname, hostnameLength);
         clientHostname[hostnameLength] = '\0';
 
-
     } else if (receiveBuffer[3] == 4) {
 
         // Client requested to connect to an IPv6 address.
@@ -956,9 +955,81 @@ static void request_on_arrival(const unsigned state, struct selector_key *key) {
 /**
  * @todo implement
  */
-static unsigned request_on_read    (struct selector_key *key) {
+static unsigned request_on_read(struct selector_key *key) {
+    socks5_connection_ptr conn = ATTACHMENT(key);
+    buffer *b = &conn->client_read_buf;
 
-    return 0;
+    size_t count;
+    uint8_t *wptr = buffer_write_ptr(b, &count);
+    ssize_t n = recv(key->fd, wptr, count, 0);
+
+    if (n <= 0) {
+        print_error("Invalid Connection");
+        return SOCKS5_ERROR;
+    }
+    buffer_write_adv(b, n);
+
+    size_t len;
+    uint8_t *ptr = buffer_read_ptr(b, &len);
+
+    if (len < 4) return SOCKS5_REQUEST;
+
+    uint8_t ver = ptr[0];
+    uint8_t cmd = ptr[1];
+    uint8_t rsv = ptr[2];
+    uint8_t atyp = ptr[3];
+
+    if (ver != VER || rsv != 0x00) return SOCKS5_ERROR;
+
+    if (cmd != CMD) {
+        print_error("Command not supported: %d", cmd);
+        return SOCKS5_ERROR;
+    }
+
+    conn->atyp = atyp;
+    size_t required_len = 4; // Header base (VER, CMD, RSV, ATYP)
+    size_t addr_len = 0;
+
+
+    // ptr + 4 init direction (IPv4/IPv6) or Domain
+    uint8_t *addr_ptr = ptr + 4;
+
+    switch (atyp) {
+        case IPV4_N: // IPv4
+            addr_len = 4;
+            required_len += addr_len + 2; // +2 from port
+
+            inet_ntop(AF_INET, addr_ptr, conn->host, sizeof(conn->host));
+            break;
+        case FQDN_N: // Domain Name
+            if (len < 5) return SOCKS5_REQUEST; 
+            addr_len = ptr[4];
+            required_len += 1 + addr_len + 2; // 1 (len) + Domain + 2 (port)
+
+            memcpy(conn->host, addr_ptr + 1, addr_len);
+            conn->host[addr_len] = '\0';
+            break;
+        case IPV6_N: // IPv6
+            addr_len = 16;
+            required_len += addr_len + 2;
+            inet_ntop(AF_INET6, addr_ptr, conn->host, sizeof(conn->host));
+
+            break;
+        default:
+            print_error("ATYP desconocido: %d", atyp);
+            return SOCKS5_ERROR;
+    }
+
+    uint16_t port_n;    //Last two bytes
+    memcpy(&port_n, ptr + required_len - 2, 2);
+    conn->port = ntohs(port_n); 
+
+    buffer_read_adv(b, required_len);
+
+    print_info("Request processed: CONNECT %s:%d (ATYP: %d)", conn->host, conn->port, atyp);
+
+    selector_set_interest_key(key, OP_NOOP);
+    return SOCKS5_CONNECT;
 }
 
 /* -------- SOCKS5_CONNECT state handlers --------*/
