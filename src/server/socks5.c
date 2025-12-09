@@ -1028,7 +1028,9 @@ static unsigned request_on_read(struct selector_key *key) {
 /* -------- SOCKS5_CONNECT state handlers --------*/
 
 //thread function
-static void * resolution_thread(struct selector_key *key) {
+static void * resolution_thread(void *arg) {
+    struct selector_key *key = (struct selector_key *) arg;
+    
     socks5_connection_ptr conn = ATTACHMENT(key);
 
     pthread_detach(pthread_self()); 
@@ -1241,12 +1243,38 @@ static void reply_on_arrival(const unsigned state, struct selector_key *key) {
 
     selector_set_interest_key(key, OP_WRITE);
 }
-/**
- * @todo implement
- */
-static unsigned reply_on_write     (struct selector_key *key) {
 
-    return 0;
+static unsigned reply_on_write(struct selector_key *key) {
+    socks5_connection_ptr conn = ATTACHMENT(key);
+
+    buffer *b = &conn->client_write_buf;
+    size_t count;
+    uint8_t *ptr = buffer_read_ptr(b, &count);
+
+    ssize_t n = send(key->fd, ptr, count, MSG_NOSIGNAL);
+
+    if (n == -1) {
+        // Error in the socket 
+        print_error("Failed sending Reply: %s", strerror(errno));
+        return SOCKS5_DONE;
+    }
+
+    buffer_read_adv(b, n);
+
+    //verify still things to send
+    if (buffer_can_read(b)) {
+        return SOCKS5_REPLY;
+    }
+
+    if (conn->connect_status == SUCCESS) {
+        // Handshake finished
+        print_success("Handshake finished");
+        return SOCKS5_RELAY;
+    } else {
+        // ERROR: finishing connection
+        print_info("Reply error, finishing connection");
+        return SOCKS5_DONE;
+    }
 }
 
 /* -------- SOCKS5_RELAY state handlers --------*/
