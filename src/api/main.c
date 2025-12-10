@@ -140,11 +140,69 @@ static void admin_prepare_ok_msg(struct admin_connection *conn,
     }
 }
 
+// ----------- Passive socket -----------
 
+static int create_server_socket(uint16_t port) {
+    int fd = socket(AF_INET6, SOCK_STREAM, 0);
+    if (fd < 0) {
+        perror("socket");
+        exit(EXIT_FAILURE);
+    }
+
+    int yes = 1;
+    if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes)) < 0) {
+        perror("setsockopt SO_REUSEADDR");
+        close(fd);
+        exit(EXIT_FAILURE);
+    }
+
+    // Sólo loopback (::1)
+    struct sockaddr_in6 addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin6_family = AF_INET6;
+    addr.sin6_port   = htons(port);
+    addr.sin6_addr   = in6addr_loopback;
+
+    if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+        perror("bind");
+        close(fd);
+        exit(EXIT_FAILURE);
+    }
+
+    if (listen(fd, BACKLOG) < 0) {
+        perror("listen");
+        close(fd);
+        exit(EXIT_FAILURE);
+    }
+
+    printf("[INF] Admin API listening on [::1]:%u\n", port);
+    return fd;
+}
 
 // ----------- API Server -----------
 
 int main(int argc, char const *argv[])  {
     
+    // Ignore SIGPIPE
+    signal(SIGPIPE, SIG_IGN);
+
+    int server_fd = create_server_socket(ADMIN_API_PORT);
+
+    for (;;) {
+        struct sockaddr_storage client_addr;
+        socklen_t client_len = sizeof(client_addr);
+
+        int client = accept(server_fd,
+                            (struct sockaddr *)&client_addr,
+                            &client_len);
+        if (client < 0) {
+            perror("accept");
+            continue;
+        }
+
+        printf("[INF] New admin connection (fd=%d)\n", client);
+        close(client);
+    }
+
     return 0;
 }
