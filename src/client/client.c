@@ -56,17 +56,52 @@ void perform_handshake(int sockfd) {
 }
 
 /**
+ * Función auxiliar común para recibir y validar la respuesta del servidor.
+ * Se llama automáticamente al final de cada perform_request.
+ */
+static void verify_socks5_reply(int sockfd) {
+    char buf[BUFFER_SIZE];
+    ssize_t n = recv(sockfd, buf, BUFFER_SIZE, 0);
+    
+    if (n < 4) {
+        print_error("Reply too short or connection closed");
+        exit(1);
+    }
+
+    // buf[0] = VER, buf[1] = REP, buf[2] = RSV, buf[3] = ATYP
+    uint8_t rep = buf[1];
+
+    if (rep == 0x00) {
+        print_success("SOCKS5 Request Granted (Tunnel Established)");
+    } else {
+        // Mapeo básico de errores para mostrar info útil
+        const char *err_msg = "Unknown Error";
+        switch(rep) {
+            case 0x01: err_msg = "General Failure"; break;
+            case 0x02: err_msg = "Connection not allowed"; break;
+            case 0x03: err_msg = "Network Unreachable"; break;
+            case 0x04: err_msg = "Host Unreachable"; break;
+            case 0x05: err_msg = "Connection Refused"; break;
+            case 0x06: err_msg = "TTL Expired"; break;
+            case 0x07: err_msg = "Command not supported"; break;
+            case 0x08: err_msg = "Address type not supported"; break;
+        }
+        fprintf(stderr, "[ERR] Server replied: 0x%02x (%s)\n", rep, err_msg);
+        print_error("SOCKS5 Request Failed");
+        exit(1);
+    }
+}
+
+
+/**
  * Realiza el REQUEST para conectar a un destino (RFC 1928)
  * Intentaremos conectar a "google.com" puerto 80
  */
-void perform_request(int sockfd) {
+void perform_request_domain(int sockfd, const char *ip_str, int port) {
     char buf[BUFFER_SIZE];
     
-    // Datos del destino
-    char target_host[] = "google.com";
-    int target_port = 80;
 
-    print_info("Enviando Request CONNECT a %s:%d...\n", target_host, target_port);
+    print_info("Enviando Request CONNECT a %s:%d...\n", ip_str, port);
 
     // Construcción del paquete REQUEST
     // VER | CMD | RSV | ATYP | DST.ADDR | DST.PORT
@@ -77,12 +112,12 @@ void perform_request(int sockfd) {
     buf[idx++] = 0x03; // ATYP: Domain Name (0x03)
     
     // Para ATYP 0x03: [Len] [DomainString]
-    buf[idx++] = strlen(target_host); 
-    memcpy(&buf[idx], target_host, strlen(target_host));
-    idx += strlen(target_host);
+    buf[idx++] = strlen(ip_str); 
+    memcpy(&buf[idx], ip_str, strlen(ip_str));
+    idx += strlen(ip_str);
 
     // Puerto (Network Byte Order)
-    uint16_t port_net = htons(target_port);
+    uint16_t port_net = htons(port);
     memcpy(&buf[idx], &port_net, 2);
     idx += 2;
 
@@ -91,22 +126,75 @@ void perform_request(int sockfd) {
         exit(1);
     }
 
-    // Recibir REPLY del servidor
-    // VER | REP | RSV | ATYP | BND.ADDR | BND.PORT
-    ssize_t n = recv(sockfd, buf, BUFFER_SIZE, 0);
-    if (n < 4) {
-        print_error("Reply too short or connection closed");
+    verify_socks5_reply(sockfd);
+}
+
+/**
+ * Realiza un request usando IPv6 (ATYP 0x04)
+ * Ejemplo: perform_request_ipv6(sock, "::1", 80);
+ */
+void perform_request_ipv6(int sockfd, const char *ip6_str, int port) {
+    char buf[BUFFER_SIZE];
+    print_info("Enviando Request IPv6 CONNECT a [%s]:%d...", ip6_str, port);
+
+    int idx = 0;
+    buf[idx++] = 0x05; // VER
+    buf[idx++] = 0x01; // CMD: CONNECT
+    buf[idx++] = 0x00; // RSV
+    buf[idx++] = 0x04; // ATYP: IPv6
+
+    // Convertir IPv6 string a binario (16 bytes)
+    if (inet_pton(AF_INET6, ip6_str, &buf[idx]) <= 0) {
+        print_error("Invalid IPv6 address: %s", ip6_str);
+        exit(1);
+    }
+    idx += 16;
+
+    // Puerto
+    uint16_t p = htons(port);
+    memcpy(&buf[idx], &p, 2);
+    idx += 2;
+
+    if (send(sockfd, buf, idx, 0) < 0) {
+        print_error("Failed sending request");
         exit(1);
     }
 
-    // Verificar el campo REP (Reply field)
-    if (buf[1] == 0x00) {
-        print_success("SOCKS5 Request Granted (Tunnel Established)");
-    } else {
-        fprintf(stderr, "[ERR] Server replied with error code: 0x%02x\n", (unsigned char)buf[1]);
-        print_error("SOCKS5 Request Failed");
+    verify_socks5_reply(sockfd);
+}
+
+/**
+ * Realiza un request usando IPv4 (ATYP 0x01)
+ * Ejemplo: perform_request_ipv4(sock, "127.0.0.1", 80);
+ */
+void perform_request_ipv4(int sockfd, const char *ip_str, int port) {
+    char buf[BUFFER_SIZE];
+    print_info("Enviando Request IPv4 CONNECT a %s:%d...", ip_str, port);
+
+    int idx = 0;
+    buf[idx++] = 0x05; // VER
+    buf[idx++] = 0x01; // CMD: CONNECT
+    buf[idx++] = 0x00; // RSV
+    buf[idx++] = 0x01; // ATYP: IPv4
+
+    // Convertir IP string a binario (4 bytes)
+    if (inet_pton(AF_INET, ip_str, &buf[idx]) <= 0) {
+        print_error("Invalid IPv4 address: %s", ip_str);
         exit(1);
     }
+    idx += 4;
+
+    // Puerto
+    uint16_t p = htons(port);
+    memcpy(&buf[idx], &p, 2);
+    idx += 2;
+
+    if (send(sockfd, buf, idx, 0) < 0) {
+        print_error("Failed sending request");
+        exit(1);
+    }
+
+    verify_socks5_reply(sockfd);
 }
 
 /**
@@ -160,7 +248,14 @@ int main(int argc, char *argv[]) {
 
     // 3. Ejecutar pasos del protocolo
     perform_handshake(sockfd);  // Auth
-    perform_request(sockfd);    // Connect
+    // Caso A: Dominio (Requiere que tu servidor resuelva DNS)
+    // perform_request_domain(sockfd, "google.com", 80);
+
+    // Caso B: IPv4 (Prueba tu servidor web local o una IP pública)
+    // perform_request_ipv4(sockfd, "142.250.78.142", 80); // IP de Google
+
+    // Caso C: IPv6 (Si tienes red IPv6 o para probar loopback)
+    perform_request_ipv6(sockfd, "::1", 8080);
     test_tunnel(sockfd);        // Data Relay
 
     close(sockfd);
