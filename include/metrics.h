@@ -1,9 +1,11 @@
 #ifndef __metrics_h_
 #define __metrics_h_
 
+#include <stdint.h>
+
 void metrics_init(void);
 
-void metrics_inc_connections(void);
+void metrics_inc_total_connections(void);
 
 void metrics_inc_concurrent_connections(void);
 
