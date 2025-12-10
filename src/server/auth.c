@@ -37,7 +37,7 @@ static void bin2hex(const unsigned char *bin, size_t len, char *out) {
 }
 
 
-bool auth_validate_user(const char *username, const char *password) {
+bool auth_validate_user(const char *username, const char *password, int * role) {
     if (username == NULL || password == NULL) return false;
 
     FILE *file = fopen(USERS_DB_FILE, "r");
@@ -69,13 +69,22 @@ bool auth_validate_user(const char *username, const char *password) {
         char *file_user = line;
         char *file_hash = coma + 1;
 
+        // El puntero file_hash ahora apunta a "hashed_password,role" (o solo hash si no hay rol)
+        char *coma2 = strchr(file_hash, ',');
+        if (coma2 != NULL) {
+            // Si hay una segunda coma, cortamos ahí para ignorar el role
+            *coma2 = '\0';
+        }
+        char *file_role = coma2+1;
+
         // Comparar
         if (strcmp(username, file_user) == 0 && strcmp(hash_hex, file_hash) == 0) {
             found = true;
+            *role = atoi(file_role);
             break;
         }
     }
 
     fclose(file);
-    return found;
+    return !found; // SUCCESS = 0
 }
