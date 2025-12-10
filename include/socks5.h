@@ -59,5 +59,10 @@ enum socks_reply_status {
     STATUS_ADDRESS_TYPE_NOT_SUPPORTED = 0x08,
 };
 
+typedef enum {
+    ROLE_USER  = 0x00,
+    ROLE_ADMIN = 0x01,
+} client_role;
+
 static uint8_t errno_to_socks_status(int err);
 #endif

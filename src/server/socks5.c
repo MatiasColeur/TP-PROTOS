@@ -67,6 +67,10 @@ struct socks5_connection {
      */
     char password[MAX_PASSWORD_LENGTH + 1];
 
+    /** * @brief Role from the authenticated user (ADMIN/USER).
+     */
+    client_role role;
+
 /* -------- Request fields (RFC 1928) -------- */
 
     /** 
@@ -758,10 +762,11 @@ int handleUsernamePasswordAuth(int clientSocket, char * username, char * passwor
 
     memcpy(password, buffer, plen);
     password[plen] = '\0';
+    client_role role;
 
     // Validate credentials. In this implementation we accept every user.
     // VER, STATUS
-    int authSuccess = auth_validate_user(username,password);
+    int authSuccess = auth_validate_user(username,password,&role);
 
     if (authSuccess) {
         sendFull(clientSocket, "\x01\x00", 2, 0);
@@ -915,7 +920,7 @@ static unsigned auth_on_read(struct selector_key *key) {
     buffer_read_adv(buffer, total_msg_len); //finish buffer usage
 
     
-    int status = auth_validate_user(conn->username,conn->password);; // 0= SUCCESS;  1 = Fail
+    int status = auth_validate_user(conn->username,conn->password,&conn->role);; // 0= SUCCESS;  1 = Fail
 
     //send answer
     uint8_t resp[2] = {SUBNEGOTIATION_VER , status};
