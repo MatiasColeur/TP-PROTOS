@@ -69,6 +69,8 @@ struct admin_connection {
     enum admin_cmd cmd;
 };
 
+// ----------- Request/Response Preparation -----------
+
 static void admin_prepare_error(struct admin_connection *conn,
                                 uint8_t status,
                                 const char *msg) {
@@ -138,44 +140,7 @@ static void admin_prepare_ok_msg(struct admin_connection *conn,
     }
 }
 
-// ----------- Passive socket -----------
 
-static int create_server_socket(uint16_t port) {
-    int fd = socket(AF_INET6, SOCK_STREAM, 0);
-    if (fd < 0) {
-        perror("socket");
-        exit(EXIT_FAILURE);
-    }
-
-    int yes = 1;
-    if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes)) < 0) {
-        perror("setsockopt SO_REUSEADDR");
-        close(fd);
-        exit(EXIT_FAILURE);
-    }
-
-    // Sólo loopback (::1)
-    struct sockaddr_in6 addr;
-    memset(&addr, 0, sizeof(addr));
-    addr.sin6_family = AF_INET6;
-    addr.sin6_port   = htons(port);
-    addr.sin6_addr   = in6addr_loopback;
-
-    if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-        perror("bind");
-        close(fd);
-        exit(EXIT_FAILURE);
-    }
-
-    if (listen(fd, BACKLOG) < 0) {
-        perror("listen");
-        close(fd);
-        exit(EXIT_FAILURE);
-    }
-
-    printf("[INF] Admin API listening on [::1]:%u\n", port);
-    return fd;
-}
 
 // ----------- API Server -----------
 
