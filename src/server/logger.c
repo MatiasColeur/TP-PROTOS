@@ -22,25 +22,90 @@ void logAccess(char * username, char * password, char * hostname, int port) {
     fclose(logFile);
 }
 
-void log_info(const char *fmt){
-    FILE * logFile = get_file(LOGS_FILE);
+void log_info(const char *fmt, ...) {
+    va_list args;
+    
+    va_start(args, fmt);
+    char buffer[1024];
+    vsnprintf(buffer, sizeof(buffer), fmt, args);
+    va_end(args);
 
-    fprint_info(logFile,fmt);
-
-    fclose(logFile);
+    FILE *logFile = get_file(LOGS_FILE);
+    if (logFile) {
+        fprint_info(logFile, "%s", buffer);
+        fclose(logFile);
+    }
 }
 
-void log_success(const char *fmt){
-    FILE * logFile = get_file(LOGS_FILE);
+void log_success(const char *fmt, ...) {
+    va_list args;
+    char buffer[1024];
+    
+    va_start(args, fmt);
+    vsnprintf(buffer, sizeof(buffer), fmt, args);
+    va_end(args);
 
-    plain_fprint_success(logFile,fmt);
-
-    fclose(logFile);
+    FILE *logFile = get_file(LOGS_FILE);
+    if (logFile) {
+        plain_fprint_success(logFile, "%s", buffer); 
+        fclose(logFile);
+    }
 }
 
-void log_error(const char *fmt){
-    FILE * logFile = get_file(LOGS_FILE);
+void log_error(const char *fmt, ...) {
+    va_list args;
+    char buffer[1024];
 
-    fprint_error(logFile,fmt);
-    fclose(logFile);
+    va_start(args, fmt);
+    vsnprintf(buffer, sizeof(buffer), fmt, args);
+    va_end(args);
+
+    FILE *logGeneral = get_file(LOGS_FILE);
+    if (logGeneral) {
+        plain_fprint_error(logGeneral, "%s", buffer);
+        fclose(logGeneral);
+    }
+
+    FILE *logErrors = get_file(ERRORS_FILE);
+    if (logErrors) {
+        plain_fprint_error(logErrors, "%s", buffer);
+        fclose(logErrors);
+    }
+}
+
+
+void log_print_info(const char *fmt, ...) {
+    va_list args;
+    char buffer[2048];
+
+    va_start(args, fmt);
+    vsnprintf(buffer, sizeof(buffer), fmt, args);
+    va_end(args);
+
+    log_info("%s", buffer);
+    print_info("%s", buffer);
+}
+
+void log_print_success(const char *fmt, ...) {
+    va_list args;
+    char buffer[2048];
+
+    va_start(args, fmt);
+    vsnprintf(buffer, sizeof(buffer), fmt, args);
+    va_end(args);
+
+    log_success("%s", buffer);
+    print_success("%s", buffer);
+}
+
+void log_print_error(const char *fmt, ...) {
+    va_list args;
+    char buffer[2048];
+
+    va_start(args, fmt);
+    vsnprintf(buffer, sizeof(buffer), fmt, args);
+    va_end(args);
+
+    log_error("%s", buffer);
+    print_error("%s", buffer);
 }

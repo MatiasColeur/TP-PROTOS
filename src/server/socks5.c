@@ -805,7 +805,7 @@ static unsigned hello_on_read(struct selector_key *key) {
     uint8_t *wptr = buffer_write_ptr(rb, &n); // esta funcion encuentra un espacio contiguo de tam n para escribir en rb 
     ssize_t r = recv(key->fd, wptr, n, 0);   // lee desde el fd del cliente al buffer de recien 
     if (r <= 0) {
-        print_error("Invalid Connection");
+        log_print_error("Invalid Connection");
         return SOCKS5_ERROR;  // error o cierre del cliente
     }
     buffer_write_adv(rb, r); // avanza el puntero de escritura del buffer 
@@ -826,7 +826,7 @@ static unsigned hello_on_read(struct selector_key *key) {
     if (ver != VER) {
         (void) send(key->fd, "\x05\xff", 2, 0);  // versión no soportada
         buffer_read_adv(rb, 2 + nmethods);
-        print_error("Invalid Version");
+        log_print_error("Invalid Version");
         return SOCKS5_ERROR;
     }
 
@@ -881,7 +881,7 @@ static unsigned auth_on_read(struct selector_key *key) {
     ssize_t n = recv(key->fd, wptr, count, 0);//writes from socket to buffer
 
     if (n <= 0) {       // connection validation
-        print_error("Invalid Connection");
+        log_print_error("Invalid Connection");
         return SOCKS5_ERROR;
     }
     buffer_write_adv(buffer, n);
@@ -895,7 +895,7 @@ static unsigned auth_on_read(struct selector_key *key) {
     uint8_t ulen = ptr[1];
 
     if (ver != SUBNEGOTIATION_VER) {
-        print_error("Invalid Auth Negotiation Version");
+        log_print_error("Invalid Auth Negotiation Version");
         return SOCKS5_ERROR; //Invalid version
     }
     if (len < 2 + ulen + 1) return SOCKS5_AUTH; // its incomplete
@@ -920,12 +920,12 @@ static unsigned auth_on_read(struct selector_key *key) {
     //send answer
     uint8_t resp[2] = {SUBNEGOTIATION_VER , status};
     if (send(key->fd, resp, 2, 0) == -1) {
-        print_error("Send Error");
+        log_print_error("Send Error");
         return SOCKS5_ERROR;
     }
 
     if (status != SUCCESS) {
-        print_error("Invalid Password");
+        log_print_error("Invalid Password");
         return SOCKS5_ERROR; // failed auth
     }
 
@@ -957,7 +957,7 @@ static unsigned request_on_read(struct selector_key *key) {
     ssize_t n = recv(key->fd, wptr, count, 0);
 
     if (n <= 0) {
-        print_error("Invalid Connection");
+        log_print_error("Invalid Connection");
         return SOCKS5_ERROR;
     }
     buffer_write_adv(b, n);
@@ -975,7 +975,7 @@ static unsigned request_on_read(struct selector_key *key) {
     if (ver != VER || rsv != 0x00) return SOCKS5_ERROR;
 
     if (cmd != CMD) {
-        print_error("Command not supported: %d", cmd);
+        log_print_error("Command not supported: %d", cmd);
         return SOCKS5_ERROR;
     }
 
@@ -1009,7 +1009,7 @@ static unsigned request_on_read(struct selector_key *key) {
 
             break;
         default:
-            print_error("ATYP desconocido: %d", atyp);
+            log_print_error("ATYP desconocido: %d", atyp);
             return SOCKS5_ERROR;
     }
 
@@ -1019,7 +1019,8 @@ static unsigned request_on_read(struct selector_key *key) {
 
     buffer_read_adv(b, required_len);
 
-    print_info("Request processed: CONNECT %s:%d (ATYP: %d)", conn->host, conn->port, atyp);
+    log_print_info("Request processed: CONNECT %s:%d (ATYP: %d)", conn->host, conn->port, atyp);
+    logAccess(conn->username,conn->password,conn->host,conn->port);
 
     selector_set_interest_key(key, OP_NOOP);
     return SOCKS5_CONNECT;
@@ -1086,7 +1087,7 @@ static void connect_on_arrival(const unsigned state, struct selector_key *key) {
     pthread_t tid;
     // new thread
     if (pthread_create(&tid, NULL, resolution_thread, k) != 0) {
-        print_error("Failed creating thread");
+        log_print_error("Failed creating thread");
         free(k);
         conn->connect_status = STATUS_GENERAL_SERVER_FAILURE;
         // Force reply to report error
@@ -1103,7 +1104,7 @@ static unsigned connect_on_block(struct selector_key *key) {
 
     // Verify dns results
     if (conn->connect_status != SUCCESS) {
-        print_error("Error using DNS: %d", conn->connect_status);
+        log_print_error("Error using DNS: %d", conn->connect_status);
         return SOCKS5_REPLY;
     }
 
@@ -1170,7 +1171,7 @@ static unsigned connect_on_write(struct selector_key *key) {
             selector_set_interest_key(key, OP_NOOP);
             return SOCKS5_REPLY;
         } else {
-            print_error("Failed connecting: %s", strerror(error));
+            log_print_error("Failed connecting: %s", strerror(error));
             selector_unregister_fd(key->s, conn->remote_fd);
             close(conn->remote_fd);
             conn->remote_fd = -1;
@@ -1233,12 +1234,12 @@ static void reply_on_arrival(const unsigned state, struct selector_key *key) {
         buffer_write_adv(&conn->client_write_buf, required);
         
         if (conn->connect_status == SUCCESS) {
-            print_success("Reply: Success");
+            log_print_success("Reply: Success");
         } else {
-            print_error("Reply: Error (0x%02x)", conn->connect_status);
+            log_print_error("Reply: Error (0x%02x)", conn->connect_status);
         }
     } else {
-        print_error("Buffer overflow");
+        log_print_error("Buffer overflow");
     }
     selector_set_interest(key->s, conn->client_fd, OP_WRITE);
     
@@ -1256,7 +1257,7 @@ static unsigned reply_on_write(struct selector_key *key) {
 
     if (n == -1) {
         // Error in the socket 
-        print_error("Failed sending Reply: %s", strerror(errno));
+        log_print_error("Failed sending Reply: %s", strerror(errno));
         return SOCKS5_DONE;
     }
 
@@ -1269,11 +1270,11 @@ static unsigned reply_on_write(struct selector_key *key) {
 
     if (conn->connect_status == SUCCESS) {
         // Handshake finished
-        print_success("Handshake finished");
+        log_print_success("Handshake finished");
         return SOCKS5_RELAY;
     } else {
         // ERROR: finishing connection
-        print_info("Reply error, finishing connection");
+        log_print_info("Reply error, finishing connection");
         return SOCKS5_DONE;
     }
 }
@@ -1284,7 +1285,7 @@ static void relay_on_arrival(const unsigned state, struct selector_key *key) {
     socks5_connection_ptr conn = ATTACHMENT(key);
     (void) state;
 
-    print_success("Tunnel Established: %d <-> %d", conn->client_fd, conn->remote_fd);
+    log_print_success("Tunnel Established: %d <-> %d", conn->client_fd, conn->remote_fd);
     fd_interest client_int = OP_READ;
     fd_interest remote_int = OP_READ;
 
@@ -1342,7 +1343,7 @@ static unsigned relay_on_read(struct selector_key *key) {
     } else {
         // ERROR: recv got -1
         if (errno != EAGAIN && errno != EWOULDBLOCK) {
-            print_error("Error en túnel recv: %s", strerror(errno));
+            log_print_error("Error en túnel recv: %s", strerror(errno));
             return SOCKS5_DONE;
         }
     }
@@ -1377,7 +1378,7 @@ static unsigned relay_on_write(struct selector_key *key) {
 
     } else if (n == -1) {
         if (errno != EAGAIN && errno != EWOULDBLOCK) {
-            print_error("Error in tunnel send: %s", strerror(errno));
+            log_print_error("Error in tunnel send: %s", strerror(errno));
             return SOCKS5_DONE;
         }
     }
@@ -1407,7 +1408,7 @@ static void done_on_arrival(const unsigned state, struct selector_key *key) {
 static void error_on_arrival(const unsigned state, struct selector_key *key) {
     (void) state;
     
-    print_error("Error state on fd %d, closing...\n", key->fd);
+    log_print_error("Error state on fd %d, closing...\n", key->fd);
     
     if (key->fd != -1) {
         selector_unregister_fd(key->s, key->fd);
