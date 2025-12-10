@@ -1243,8 +1243,9 @@ static void reply_on_arrival(const unsigned state, struct selector_key *key) {
     }
     selector_set_interest(key->s, conn->client_fd, OP_WRITE);
     
-    selector_set_interest(key->s, conn->remote_fd, OP_NOOP);
-}
+    if (conn->remote_fd != -1) {
+        selector_set_interest(key->s, conn->remote_fd, OP_NOOP);
+    }}
 
 static unsigned reply_on_write(struct selector_key *key) {
     socks5_connection_ptr conn = ATTACHMENT(key);
@@ -1447,6 +1448,11 @@ socks5_close(struct selector_key *key) {
         conn->remote_fd = -1;
     }
 
+    if (stm_state(&conn->stm) == SOCKS5_CONNECT && conn->client_fd != -1) {
+        // El struct 'conn' sigue vivo y el cliente conectado.
+        // The struct conn still alive and client its connected
+        return;
+    }
     // verify if theres another socket open
     int other_fd = -1;
     if (conn->client_fd != -1) other_fd = conn->client_fd;

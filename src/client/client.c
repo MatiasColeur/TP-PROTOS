@@ -252,10 +252,10 @@ int main(int argc, char *argv[]) {
     // perform_request_domain(sockfd, "google.com", 80);
 
     // Caso B: IPv4 (Prueba tu servidor web local o una IP pública)
-    // perform_request_ipv4(sockfd, "142.250.78.142", 80); // IP de Google
+    perform_request_ipv4(sockfd, "8.8.8.8", 80); // IP de Google
 
     // Caso C: IPv6 (Si tienes red IPv6 o para probar loopback)
-    perform_request_ipv6(sockfd, "::1", 8080);
+    // perform_request_ipv6(sockfd, "::1", 8080);
     test_tunnel(sockfd);        // Data Relay
 
     close(sockfd);
