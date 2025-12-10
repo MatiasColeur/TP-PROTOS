@@ -1,9 +1,11 @@
 #include "../../include/logger.h"
 #include "../../include/errors.h"
+#include <pthread.h>
 
+int concurrent_connections = 0;
 
 static FILE * get_file(const char * file){
-    FILE * logFile = fopen(file, "a");
+    FILE * logFile = fopen(file, "a"); //opens the file in append mode
     if (!logFile) {
         print_error("Couldn't open the log file");
         return 0;
@@ -11,15 +13,45 @@ static FILE * get_file(const char * file){
     return logFile;
 }
 
-void logAccess(char * username, char * password, char * hostname, int port) {
-    FILE * logFile = get_file(ACCESS_FILE);
+static FILE * get_file_write(const char * file) {
+    FILE * f = fopen(file, "w"); //opens the file in write mode
+    if (!f) {
+        print_error("Couldn't open the metrics file");
+        return NULL;
+    }
+    return f;
+}
+
+
+void log_access(char * username, char * password, char * hostname, int port) {
+    FILE * accessFile = get_file(ACCESS_FILE);
+    FILE * concurrenciesFile = get_file_write(CONCURRENCIES_FILE);
 
     time_t now = time(NULL);
     char timestamp[64];
     strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", localtime(&now));
 
-    fprintf(logFile, "[%s] - %s:%s - Connected to %s port %d\n", timestamp, username, password, hostname, port);
-    fclose(logFile);
+    fprintf(accessFile, "[%s] - %s:%s - Connected to %s port %d\n", timestamp, username, password, hostname, port);
+
+    int value = ++concurrent_connections;
+    fprintf(concurrenciesFile,"%d\n", value);
+
+    fclose(accessFile);
+    fclose(concurrenciesFile);
+}
+
+void log_exit() {
+    FILE * concurrenciesFile = get_file_write(CONCURRENCIES_FILE);
+
+    if (!concurrenciesFile) return;
+
+    if (concurrent_connections > 0) 
+        concurrent_connections--;
+
+    fprintf(concurrenciesFile, "%d\n", concurrent_connections);
+    fclose(concurrenciesFile);
+
+    return;
 }
 
 void log_info(const char *fmt, ...) {

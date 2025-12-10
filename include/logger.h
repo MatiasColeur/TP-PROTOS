@@ -7,9 +7,10 @@
 #include <time.h>
 
 #define ACCESS_FILE "log/access.txt"
+#define CONCURRENCIES_FILE "log/concurrencies.txt"
 #define LOGS_FILE "log/logs.txt"
 #define ERRORS_FILE "log/errors.txt"
-void logAccess(char * username, char * password, char * hostname, int port);
+void log_access(char * username, char * password, char * hostname, int port);
 
 /**
  * @brief Registra un mensaje informativo en el archivo de log.

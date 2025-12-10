@@ -1025,7 +1025,7 @@ static unsigned request_on_read(struct selector_key *key) {
     buffer_read_adv(b, required_len);
 
     log_print_info("Request processed: CONNECT %s:%d (ATYP: %d)", conn->host, conn->port, atyp);
-    logAccess(conn->username,conn->password,conn->host,conn->port);
+    log_access(conn->username,conn->password,conn->host,conn->port);
 
     selector_set_interest_key(key, OP_NOOP);
     return SOCKS5_CONNECT;
