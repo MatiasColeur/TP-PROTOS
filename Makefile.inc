@@ -1,5 +1,5 @@
 COMPILER=gcc
 
-COMPILERFLAGS=-Wall -pedantic -g -pthread -Wno-pointer-arith
+COMPILERFLAGS=-Wall -pedantic -g  -pthread -Wno-pointer-arith
 
-LDFLAGS=
+LDFLAGS= -pthread -lcrypto

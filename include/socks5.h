@@ -18,6 +18,8 @@
 
 #include "util.h"
 #include "logger.h"
+#include "selector.h"
+#include "auth.h"
 
 #define VER 5
 

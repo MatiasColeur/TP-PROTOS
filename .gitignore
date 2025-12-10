@@ -51,5 +51,14 @@ Module.symvers
 Mkfile.old
 dkms.conf
 
-log/
+log/*
+bin/*
 bin/
+obj/
+*.bin
+*.txt
+*.json
+
+# Visual Studio Code stuffs
+.vscode/
+.DS_Store
