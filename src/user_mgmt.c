@@ -1,4 +1,3 @@
-// user_store.c
 #include "user_mgmt.h"
 #include <stdio.h>
 #include <stdlib.h>
