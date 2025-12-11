@@ -1270,7 +1270,6 @@ static unsigned reply_on_write(struct selector_key *key) {
     uint8_t *ptr = buffer_read_ptr(b, &count);
 
     ssize_t n = send(key->fd, ptr, count, MSG_NOSIGNAL);
-    log_bytes((uint64_t)n);
 
     if (n == -1) {
         // Error in the socket 
