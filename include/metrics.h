@@ -8,20 +8,15 @@
 #define CONCURRENCIES_FILE "log/concurrencies.txt"
 #define BYTES_FILE "log/concurrencies.txt"
 
-void metrics_init(const char *access_log_path);
+#define MAX_LINE 512
 
 uint64_t metrics_get_total_connections(void);
 
-void metrics_inc_concurrent_connections(void);
-void metrics_dec_concurrent_connections(void);
-
-void metrics_add_bytes_received(uint64_t n);
-void metrics_add_bytes_sent(uint64_t n);
-
 uint64_t metrics_get_concurrent_connections(void);
-uint64_t metrics_get_total_bytes_received(void);
-uint64_t metrics_get_total_bytes_sent(void);
 
-void metrics_print(void);
+uint64_t metrics_get_bytes(void);
+
+void metrics_find_user(const char *filename, const char *username);
+
 
 #endif

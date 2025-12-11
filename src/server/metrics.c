@@ -53,10 +53,34 @@ uint64_t metrics_get_bytes(void) {
     return read_int_from_log_file(BYTES_FILE);
 }
 
+void metrics_find_user(const char *filename, const char *username) {
 
-void metrics_print(void) {
-    printf("=== Server metrics ===\n");
-    printf("Total connections (from log): %llu\n", metrics_get_total_connections());
-    // printf("Concurrent connections: %llu\n", concurrent_connections);
-    // printf("Total bytes received: %llu\n", bytes_transfered);
+    FILE *f = get_file(ACCESS_FILE);
+
+    char line[MAX_LINE];
+
+    while (fgets(line, sizeof(line), f) != NULL) {
+
+        const char *p = strstr(line, "] - ");
+        if (p == NULL) continue;
+
+        p += 4; // salto "] - "
+
+        char user_in_line[128];
+        int i = 0;
+
+        while (p[i] != ':' && p[i] != '\0' && i < sizeof(user_in_line)-1) {
+            user_in_line[i] = p[i];
+            i++;
+        }
+        user_in_line[i] = '\0';
+
+
+        if (strcmp(user_in_line, username) == 0) {
+            printf("%s", line);
+        }
+    }
+
+    fclose(f);
 }
+
