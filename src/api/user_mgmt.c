@@ -1,7 +1,4 @@
-#include "user_mgmt.h"
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include "../../include/user_mgmt.h"
 
 typedef struct node {
     user_record rec;

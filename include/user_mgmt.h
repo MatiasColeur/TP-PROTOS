@@ -1,6 +1,11 @@
-#pragma once
+#ifndef USER_MGMT_H
+#define USER_MGMT_H
+
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 typedef struct {
     char user[64];
@@ -16,3 +21,5 @@ bool user_store_delete(const char *user);
 const user_record *user_store_find(const char *user);     
 size_t user_store_list(user_record *out, size_t max_out); 
 void user_store_close(void);                               
+
+#endif
