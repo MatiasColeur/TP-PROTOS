@@ -560,7 +560,33 @@ static unsigned request_on_read(struct selector_key *key) {
     buffer_read_adv(b, required_len);
 
     log_print_info("Request processed: CONNECT %s:%d (ATYP: %d)", conn->host, conn->port, atyp);
-    log_access(conn->username,conn->password,conn->host,conn->port);
+
+    struct sockaddr_storage addr;
+    socklen_t addr_len2 = sizeof(addr);
+
+    char client_ip[INET6_ADDRSTRLEN] = {0};
+    int client_port = 0;
+
+    if (getsockname(conn->client_fd, (struct sockaddr *)&addr, &addr_len2) == 0) {
+        if (addr.ss_family == AF_INET) {
+            struct sockaddr_in *ipv4 = (struct sockaddr_in *)&addr;
+            inet_ntop(AF_INET, &(ipv4->sin_addr), client_ip, sizeof(client_ip));
+            client_port = ntohs(ipv4->sin_port);
+        } else if (addr.ss_family == AF_INET6) {
+            struct sockaddr_in6 *ipv6 = (struct sockaddr_in6 *)&addr;
+            inet_ntop(AF_INET6, &(ipv6->sin6_addr), client_ip, sizeof(client_ip));
+            client_port = ntohs(ipv6->sin6_port);
+        }
+    }
+
+    log_access(
+        conn->username,     // username
+        conn->host,         // hostname (destino)
+        conn->port,         // port (destino)
+        client_port,        // client_port
+        client_ip,          // client_ip
+        conn->connect_status // status
+    );
 
     selector_set_interest_key(key, OP_NOOP);
     return SOCKS5_CONNECT;

@@ -51,7 +51,7 @@ void init_log() {
 
 }
 
-void log_access(char * username, char * password, char * hostname, int port) {
+void log_access(char * username, char * hostname, int port, int client_port, char * client_ip, int status) {
     FILE * accessFile = get_file_append(ACCESS_FILE);
     FILE * concurrenciesFile = get_file_write(CONCURRENCIES_FILE);
 
@@ -59,7 +59,17 @@ void log_access(char * username, char * password, char * hostname, int port) {
     char timestamp[64];
     strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", localtime(&now));
 
-    fprintf(accessFile, "[%s] - %s:%s - Connected to %s port %d\n", timestamp, username, password, hostname, port);
+    fprintf(accessFile, "%s\t%s\tA\t%s\t%d\t%s\t%d\t%d\n", 
+        timestamp, 
+        username, 
+        client_ip, 
+        client_port, 
+        hostname, 
+        port, 
+        status 
+    );
+
+    puts("debug");
 
     int value = ++concurrent_connections;
     fprintf(concurrenciesFile,"%d\n", value);
