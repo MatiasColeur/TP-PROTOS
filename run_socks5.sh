@@ -13,7 +13,7 @@ SOCKS_PORT="1080"
 
 # Configuración Management (Admin)
 MNG_ADDR="127.0.0.1"   # Escuchar solo localmente (seguridad)
-MNG_PORT="8080"
+MNG_PORT="5555"
 
 # Usuarios (Formato user:pass)
 USER_GUEST="invitado:1234"

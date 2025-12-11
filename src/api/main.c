@@ -14,6 +14,7 @@
 #include "../../include/shared.h"
 #include "../../include/metrics.h"
 #include "../../include/api.h"
+#include "../../include/auth.h"
 
 #define BACKLOG        5
 
@@ -290,9 +291,10 @@ static void process_user_mgmt_request(struct admin_connection *conn) {
         }
 
         user_record rec = (user_record){0};
-
+        char output[65];
+        get_sha3(password,output);
         strncpy(rec.user, username, sizeof rec.user - 1);
-        strncpy(rec.pass_hash, password, sizeof rec.pass_hash - 1); // sin hash
+        strncpy(rec.pass_hash, output , sizeof rec.pass_hash - 1); // sin hash
 
         if (!parse_role_string(role_str, rec.role, sizeof rec.role)) {
             admin_prepare_error(conn, 1, "invalid_role");

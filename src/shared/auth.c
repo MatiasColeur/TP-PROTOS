@@ -14,7 +14,7 @@
 
 // Función auxiliar: Calcula el SHA3-256 de un string usando OpenSSL
 // Escribe el resultado (32 bytes) en el buffer 'out'
-static void compute_sha3(const char *password, unsigned char *out, unsigned int *out_len) {
+void compute_sha3(const char *password, unsigned char *out, unsigned int *out_len) {
     EVP_MD_CTX *mdctx;
     const EVP_MD *md;
 
@@ -36,6 +36,15 @@ static void bin2hex(const unsigned char *bin, size_t len, char *out) {
     out[len * 2] = '\0';
 }
 
+
+void get_sha3(const char *password, char *out) {
+    unsigned char hash_bin[EVP_MAX_MD_SIZE];
+    unsigned int hash_len;
+
+    compute_sha3(password, hash_bin, &hash_len);
+
+    bin2hex(hash_bin, hash_len, out);
+}
 
 bool auth_validate_user(const char *username, const char *password, int * role) {
     if (username == NULL || password == NULL) return false;
