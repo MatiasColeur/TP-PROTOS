@@ -14,6 +14,7 @@
 #include "../../include/selector.h"
 #include "../../include/logger.h"
 #include "../../include/parser_arguments.h"
+#include "../../include/bootstrap.h"
 
 #define MAX_PENDING_CONNECTION_REQUESTS 128
 #define MAX_SOCKETS 1024
@@ -131,6 +132,16 @@ int main(int argc, const char* argv[]) {
         selector_destroy(selector);
         selector_close();
         return EXIT_FAILURE;
+    }
+
+    pid_t pid = fork();
+    if (pid < 0) {
+        perror("[ERR] fork(), initial users creation skipped");
+        // si falla, seguís sin bootstrap pero el server vive
+    } else if (pid == 0) {
+        sleep(1);
+        bootstrap_cli_users_via_api(&args);
+        _exit(0);
     }
 
 
