@@ -13,7 +13,8 @@
 #include "../../include/util.h"
 #include "../../include/selector.h"
 
-#define MAX_PENDING_CONNECTION_REQUESTS 5
+#define MAX_PENDING_CONNECTION_REQUESTS 128
+#define MAX_SOCKETS 1024
 #define SOURCE_PORT 1080
 
 static void accept_handle_read(struct selector_key *key);
@@ -88,7 +89,7 @@ int main(int argc, const char* argv[]) {
         return EXIT_FAILURE;
     }
 
-    fd_selector selector = selector_new(10);
+    fd_selector selector = selector_new(MAX_SOCKETS);
     if (selector == NULL) {
         fprintf(stderr, "selector_new error\n");
         selector_close();

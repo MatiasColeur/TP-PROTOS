@@ -1251,7 +1251,7 @@ static void reply_on_arrival(const unsigned state, struct selector_key *key) {
         if (conn->connect_status == SUCCESS) {
             log_print_success("Reply: Success");
         } else {
-            log_print_error("Reply: Error (0x%02x)", conn->connect_status);
+            log_print_error("Reply: Error (0x%02x) %s", conn->connect_status,strerror(conn->connect_status));
         }
     } else {
         log_print_error("Buffer overflow");
@@ -1457,6 +1457,7 @@ socks5_close(struct selector_key *key) {
 
     stm_handler_close(&conn->stm, key);
 
+    close(key->fd);
     if (key->fd == conn->client_fd) {
         conn->client_fd = -1;
     } else if (key->fd == conn->remote_fd) {
