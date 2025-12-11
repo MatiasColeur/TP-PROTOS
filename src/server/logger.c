@@ -1,8 +1,10 @@
 #include "../../include/logger.h"
 #include "../../include/errors.h"
 #include <pthread.h>
+#include <inttypes.h>
 
 uint64_t concurrent_connections = 0;
+static uint64_t total_bytes = 0;
 
 /*---------- STATIC FUNCTIONS ----------*/
 
@@ -29,6 +31,26 @@ inline static FILE * get_file_read(const char * file) {
 
 /*---------- LOGGER FUNCTIONS ----------*/
 
+void init_log() {
+
+    FILE *fr = fopen(BYTES_FILE, "r");
+    if (fr != NULL) {
+        if (fscanf(fr, "%" SCNu64, &total_bytes) != 1) {
+            total_bytes = 0;
+        }
+        fclose(fr);
+    } else {
+        // Create file with initial value
+        FILE *fw = fopen(BYTES_FILE, "w");
+        if (fw != NULL) {
+            fprintf(fw, "0\n");
+            fclose(fw);
+            total_bytes = 0;
+        }
+    }
+
+}
+
 void log_access(char * username, char * password, char * hostname, int port) {
     FILE * accessFile = get_file_append(ACCESS_FILE);
     FILE * concurrenciesFile = get_file_write(CONCURRENCIES_FILE);
@@ -52,7 +74,7 @@ void log_exit(void) {
     if (concurrent_connections > 0) 
         concurrent_connections--;
 
-    fprintf(concurrenciesFile, "%lld\n", concurrent_connections);
+    fprintf(concurrenciesFile, "%" PRIu64 "\n", concurrent_connections);
     fclose(concurrenciesFile);
 
     return;
@@ -60,19 +82,29 @@ void log_exit(void) {
 
 void log_bytes(uint64_t bytes) {
 
-    uint64_t value = 0;
-
-    FILE *fr = get_file_read(BYTES_FILE);
-    if (fr != NULL) {
-        if (fscanf(fr, "%llu", &value) != 1) {
-            value = 0;
-        }
-        fclose(fr);
+    FILE *f = fopen(BYTES_FILE, "r+");
+    if (f == NULL) {
+        // Try to create it if it does not exist
+        f = fopen(BYTES_FILE, "w+");
     }
 
-    FILE *fw = get_file_write(BYTES_FILE);
-    fprintf(fw, "%llu\n", value + bytes);
-    fclose(fw);
+    if (f == NULL) {
+        print_error("Couldn't open the log file");
+        // pthread_mutex_unlock(&bytes_lock);
+        return;
+    }
+
+    uint64_t file_value = 0;
+    if (fscanf(f, "%" SCNu64, &file_value) != 1) {
+        file_value = 0;
+    }
+
+    total_bytes = file_value + bytes;
+    rewind(f);
+    fprintf(f, "%" PRIu64 "\n", total_bytes);
+    fflush(f);
+    fclose(f);
+
 }
 
 
