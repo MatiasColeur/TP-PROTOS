@@ -41,6 +41,41 @@ static void verify_socks5_reply(int sockfd) {
     }
 }
 
+int create_client_socket(const char *server_address, int server_port) {
+    int sockfd;
+    struct sockaddr_in serv_addr;
+
+    // 1. Crear socket TCP
+    if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+        print_error("Failed creating socket");
+        return -1;
+    }
+
+    // Limpieza de estructura (buena práctica)
+    memset(&serv_addr, 0, sizeof(serv_addr));
+    
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_port = htons(server_port);
+
+    // 2. Convertir IP de texto a binario
+    if (inet_pton(AF_INET, server_address, &serv_addr.sin_addr) <= 0) {
+        print_error("Invalid address / Address not supported: %s", server_address);
+        close(sockfd); // Liberar recurso antes de salir
+        return -1;
+    }
+
+    // 3. Conectar al servidor
+    print_info("Connecting to Proxy SOCKS5 at %s:%d...", server_address, server_port);
+    
+    if (connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
+        print_error("Connection Failed (Is the server running?)");
+        close(sockfd); // Liberar recurso antes de salir
+        return -1;
+    }
+
+    return sockfd; // Retornar el socket conectado
+}
+
 void perform_handshake(int sockfd, const char *username, const char *password) {
     char buf[BUFFER_SIZE];
     
