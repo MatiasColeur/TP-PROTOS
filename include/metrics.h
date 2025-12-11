@@ -2,19 +2,22 @@
 #define __metrics_h_
 
 #include <stdint.h>
+#include <string.h>
+#include "errors.h"
 
-void metrics_init(void);
+#define ACCESS_FILE "log/access.txt"
+#define CONCURRENCIES_FILE "log/concurrencies.txt"
+#define BYTES_FILE "log/concurrencies.txt"
 
-void metrics_inc_total_connections(void);
+#define MAX_LINE 256
 
-void metrics_inc_concurrent_connections(void);
+uint64_t metrics_get_total_connections(void);
 
-void metrics_dec_concurrent_connections(void);
+uint64_t metrics_get_concurrent_connections(void);
 
-void metrics_add_bytes_received(uint64_t n);
+uint64_t metrics_get_bytes(void);
 
-void metrics_add_bytes_sent(uint64_t n);
+void metrics_find_user(const char * username);
 
-void metrics_print(void);
 
-#endif // __metrics_h_
+#endif

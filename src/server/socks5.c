@@ -200,7 +200,7 @@ static unsigned request_on_read    (struct selector_key *key);
 
 static void     connect_on_arrival (const unsigned state, struct selector_key *key);
 static unsigned connect_on_block   (struct selector_key *key);
-static unsigned connect_on_write(struct selector_key *key);
+static unsigned connect_on_write   (struct selector_key *key);
 
 static void     reply_on_arrival   (const unsigned state, struct selector_key *key);
 static unsigned reply_on_write     (struct selector_key *key);
@@ -809,7 +809,7 @@ static unsigned hello_on_read(struct selector_key *key) {
     size_t n;
     uint8_t *wptr = buffer_write_ptr(rb, &n); // esta funcion encuentra un espacio contiguo de tam n para escribir en rb 
     ssize_t r = recv(key->fd, wptr, n, 0);   // lee desde el fd del cliente al buffer de recien 
-    if (r <= 0) {
+     if (r <= 0) {
         log_print_error("Invalid Connection");
         return SOCKS5_ERROR;  // error o cierre del cliente
     }
@@ -1025,7 +1025,7 @@ static unsigned request_on_read(struct selector_key *key) {
     buffer_read_adv(b, required_len);
 
     log_print_info("Request processed: CONNECT %s:%d (ATYP: %d)", conn->host, conn->port, atyp);
-    logAccess(conn->username,conn->password,conn->host,conn->port);
+    log_access(conn->username,conn->password,conn->host,conn->port);
 
     selector_set_interest_key(key, OP_NOOP);
     return SOCKS5_CONNECT;
@@ -1383,6 +1383,7 @@ static unsigned relay_on_write(struct selector_key *key) {
     size_t size;
     uint8_t *ptr = buffer_read_ptr(b_write, &size);
     ssize_t n = send(key->fd, ptr, size, MSG_NOSIGNAL);
+    log_bytes((uint64_t)n);
 
     if (n > 0) {
         buffer_read_adv(b_write, n);
@@ -1482,6 +1483,8 @@ socks5_close(struct selector_key *key) {
     if (conn->client_fd == -1 && conn->remote_fd == -1) {
         socks5_kill_connection(conn);
     }
+
+    log_exit();
 }
 
 /* -------- handle_new_connection() auxiliares -------- */
