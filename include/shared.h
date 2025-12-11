@@ -4,7 +4,7 @@
 #define ADMIN_API_PORT 5555
 #define LOOPBACK_IPV4 "127.0.0.1"
 #define LOOPBACK_IPV6 "::1"
-
+#define USER_DB_PATH "../../users.csv"
 
 
 #endif

@@ -11,9 +11,11 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
+#include "../../include/user_mgmt.h"
 #include "../../include/shared.h"
 
 #define BACKLOG        5
+
 
 struct admin_req_header {
     uint32_t id;   
@@ -242,70 +244,87 @@ static void process_user_mgmt_request(struct admin_connection *conn) {
 
     char username[128] = {0};
     char password[128] = {0};
-    char role_str[32]  = {0};
-    uint8_t role       = 0;
+    char role_str[64]  = {0};
     int rc             = 0;
 
     switch (conn->cmd) {
-        case ADMIN_SET_USER_ROLE:
-            // Body: "username role\n" donde role puede ser "admin"/"user" o un número
-            if (sscanf(body, "%127s %31s", username, role_str) != 2) {
+        case ADMIN_SET_USER_ROLE: {
+            // Body: "username role\n"
+            if (sscanf(body, "%127s %63s", username, role_str) != 2) {
                 admin_prepare_error(conn, 1, "bad_format");
                 free(body);
                 return;
             }
-            if (strcmp(role_str, "admin") == 0) {
-                role = 1;
-            } else if (strcmp(role_str, "user") == 0) {
-                role = 0;
-            } else {
-                // También podés permitir número
-                role = (uint8_t) atoi(role_str);
+
+            const user_record *current = user_store_find(username);
+            if (current == NULL) {
+                admin_prepare_error(conn, 1, "user_not_found");
+                free(body);
+                return;
             }
-            rc = users_set_role(username, role);
-            if (rc == 0) {
+
+            user_record updated = *current;
+            if (!parse_role_string(role_str, updated.role, sizeof updated.role)) {
+                admin_prepare_error(conn, 1, "invalid_role");
+                free(body);
+                return;
+            }
+
+            rc = user_store_update(username, &updated);
+            if (rc) {
                 admin_prepare_ok_msg(conn, "OK\n");
             } else {
                 admin_prepare_error(conn, 1, "set_user_role_failed");
             }
             break;
+        }
 
-        case ADMIN_ADD_USER:
+        case ADMIN_ADD_USER: {
             // Body: "username password role\n"
-            if (sscanf(body, "%127s %127s %31s", username, password, role_str) != 3) {
+            if (sscanf(body, "%127s %127s %63s", username, password, role_str) != 3) {
                 admin_prepare_error(conn, 1, "bad_format");
                 free(body);
                 return;
             }
-            if (strcmp(role_str, "admin") == 0) {
-                role = 1;
-            } else if (strcmp(role_str, "user") == 0) {
-                role = 0;
-            } else {
-                role = (uint8_t) atoi(role_str);
+
+            user_record rec;
+            memset(&rec, 0, sizeof rec);
+
+            strncpy(rec.user, username, sizeof rec.user - 1);
+            rec.user[sizeof rec.user - 1] = '\0';
+
+            strncpy(rec.pass_hash, password, sizeof rec.pass_hash - 1);
+            rec.pass_hash[sizeof rec.pass_hash - 1] = '\0';
+
+            if (!parse_role_string(role_str, rec.role, sizeof rec.role)) {
+                admin_prepare_error(conn, 1, "invalid_role");
+                free(body);
+                return;
             }
-            rc = users_add(username, password, role);
-            if (rc == 0) {
+
+            if (user_store_add(&rec)) {
                 admin_prepare_ok_msg(conn, "OK\n");
             } else {
-                admin_prepare_error(conn, 1, "add_user_failed");
+                admin_prepare_error(conn, 1, "add_user_failed_or_exists");
             }
             break;
+        }
 
-        case ADMIN_DELETE_USER:
+        case ADMIN_DELETE_USER: {
             // Body: "username\n"
             if (sscanf(body, "%127s", username) != 1) {
                 admin_prepare_error(conn, 1, "bad_format");
                 free(body);
                 return;
             }
-            rc = users_delete(username);
-            if (rc == 0) {
+
+            if (user_store_delete(username)) {
                 admin_prepare_ok_msg(conn, "OK\n");
             } else {
                 admin_prepare_error(conn, 1, "delete_user_failed");
             }
             break;
+        }
 
         default:
             admin_prepare_error(conn, 1, "invalid_user_cmd");
@@ -314,6 +333,7 @@ static void process_user_mgmt_request(struct admin_connection *conn) {
 
     free(body);
 }
+
 
 static void process_user_connections_request(struct admin_connection *conn) {
     if (conn->req_body == NULL || conn->req_body_len == 0) {
@@ -378,58 +398,147 @@ static void process_request(struct admin_connection *conn) {
     }
 }
 
-// ----------- Manejo de una conexión de admin -----------
+static bool parse_role_string(const char *role_str,
+                              char *out_role,
+                              size_t out_size) {
+    if (!out_role || out_size == 0) return false;
 
-static void handle_admin_client(int client_fd) {
-    struct admin_connection conn;
-    memset(&conn, 0, sizeof(conn));
-    conn.fd = client_fd;
-
-    for (;;) {
-
-        if (!read_request_header(&conn)) {
-            break;
-        }
-
-        printf("[INF] Request cmd=0x%02X len=%u\n",
-               conn.cmd, conn.req_body_len);
-
-        conn.req_body   = NULL;
-        conn.resp_body  = NULL;
-
-        if (!read_request_body(&conn)) {
-            
-            if (conn.req_body) {
-                free(conn.req_body);
-                conn.req_body = NULL;
-            }
-            break;
-        }
-
-        process_request(&conn);
-
-        // 4) Enviar respuesta
-        if (!send_response(&conn)) {
-            fprintf(stderr, "[WRN] Failed to send response\n");
-            if (conn.req_body)  free(conn.req_body);
-            if (conn.resp_body) free(conn.resp_body);
-            break;
-        }
-
-        if (conn.req_body) {
-            free(conn.req_body);
-            conn.req_body = NULL;
-        }
-        if (conn.resp_body) {
-            free(conn.resp_body);
-            conn.resp_body = NULL;
-        }
-
-        if (conn.cmd == ADMIN_QUIT) {
-            printf("[INF] Admin sent QUIT\n");
-            break;
-        }
+    if (strcmp(role_str, "admin") == 0) {
+        strncpy(out_role, "admin", out_size - 1);
+    } else if (strcmp(role_str, "user") == 0) {
+        strncpy(out_role, "user", out_size - 1);
+    } else {
+        strncpy(out_role, role_str, out_size - 1);
     }
+    out_role[out_size - 1] = '\0';
+    return true;
+}
+
+static void process_user_mgmt_request(struct admin_connection *conn) {
+    if (conn->req_body == NULL || conn->req_body_len == 0) {
+        admin_prepare_error(conn, 1, "missing_body");
+        return;
+    }
+
+    // Convertir payload a string null-terminated
+    char *body = malloc(conn->req_body_len + 1);
+    if (!body) {
+        admin_prepare_error(conn, 1, "no_memory");
+        return;
+    }
+
+    memcpy(body, conn->req_body, conn->req_body_len);
+    body[conn->req_body_len] = '\0';
+
+    char username[128] = {0};
+    char password[128] = {0};
+    char role_str[64]  = {0};
+    char role[32]      = {0};
+    int ok;
+
+    switch (conn->cmd) {
+
+    // --------------------------------------------------------------
+    // SET_USER_ROLE: "username role"
+    // --------------------------------------------------------------
+    case ADMIN_SET_USER_ROLE: {
+        if (sscanf(body, "%127s %63s", username, role_str) != 2) {
+            admin_prepare_error(conn, 1, "bad_format");
+            break;
+        }
+
+        const user_record *rec = user_store_find(username);
+        if (!rec) {
+            admin_prepare_error(conn, 1, "user_not_found");
+            break;
+        }
+
+        user_record updated = *rec; // copiar user + pass + role existentes
+
+        if (!parse_role_string(role_str, updated.role, sizeof updated.role)) {
+            admin_prepare_error(conn, 1, "invalid_role");
+            break;
+        }
+
+        ok = user_store_update(username, &updated);
+        if (!ok) {
+            admin_prepare_error(conn, 1, "set_user_role_failed");
+            break;
+        }
+
+        // persistencia
+        if (!user_store_save(USER_DB_PATH)) {
+            admin_prepare_error(conn, 1, "save_failed");
+            break;
+        }
+
+        admin_prepare_ok_msg(conn, "OK\n");
+        break;
+    }
+
+    // --------------------------------------------------------------
+    // ADD_USER: "username password role"
+    // password sin hash
+    // --------------------------------------------------------------
+    case ADMIN_ADD_USER: {
+        if (sscanf(body, "%127s %127s %63s", username, password, role_str) != 3) {
+            admin_prepare_error(conn, 1, "bad_format");
+            break;
+        }
+
+        user_record rec = {0};
+
+        strncpy(rec.user, username, sizeof rec.user - 1);
+        strncpy(rec.pass_hash, password, sizeof rec.pass_hash - 1); // ← sin hash
+        if (!parse_role_string(role_str, rec.role, sizeof rec.role)) {
+            admin_prepare_error(conn, 1, "invalid_role");
+            break;
+        }
+
+        ok = user_store_add(&rec);
+        if (!ok) {
+            admin_prepare_error(conn, 1, "add_user_failed_or_exists");
+            break;
+        }
+
+        if (!user_store_save(USER_DB_PATH)) {
+            admin_prepare_error(conn, 1, "save_failed");
+            break;
+        }
+
+        admin_prepare_ok_msg(conn, "OK\n");
+        break;
+    }
+
+    // --------------------------------------------------------------
+    // DELETE_USER: "username"
+    // --------------------------------------------------------------
+    case ADMIN_DELETE_USER: {
+        if (sscanf(body, "%127s", username) != 1) {
+            admin_prepare_error(conn, 1, "bad_format");
+            break;
+        }
+
+        ok = user_store_delete(username);
+        if (!ok) {
+            admin_prepare_error(conn, 1, "delete_user_failed");
+            break;
+        }
+
+        if (!user_store_save(USER_DB_PATH)) {
+            admin_prepare_error(conn, 1, "save_failed");
+            break;
+        }
+
+        admin_prepare_ok_msg(conn, "OK\n");
+        break;
+    }
+
+    default:
+        admin_prepare_error(conn, 1, "invalid_user_cmd");
+    }
+
+    free(body);
 }
 
 // ----------- API Server -----------
