@@ -16,7 +16,6 @@ MNG_ADDR="127.0.0.1"   # Escuchar solo localmente (seguridad)
 MNG_PORT="8080"
 
 # Usuarios (Formato user:pass)
-USER_ADMIN="admin:admin"
 USER_GUEST="invitado:1234"
 
 # Opciones extra
@@ -45,6 +44,5 @@ $EJECUTABLE \
     -p "$SOCKS_PORT" \
     -L "$MNG_ADDR" \
     -P "$MNG_PORT" \
-    -u "$USER_ADMIN" \
     -u "$USER_GUEST" \
     $FLAGS_EXTRA
