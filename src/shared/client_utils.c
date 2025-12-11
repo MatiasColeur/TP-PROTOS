@@ -4,8 +4,8 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <errno.h>
-#include "../../include/errors.h" // Asegúrate de que print_error/success existan
-#include "client_utils.h"       // Nuestro propio header
+#include "../../include/errors.h" 
+#include "../../include/client_utils.h"
 
 /**
  * Función auxiliar interna para validar la respuesta del servidor (REP).

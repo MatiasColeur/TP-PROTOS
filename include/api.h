@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+#include <arpa/inet.h>
 
 #define ADMIN_API_PORT 5555
 #define LOOPBACK_IPV4 "127.0.0.1"
