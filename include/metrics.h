@@ -2,6 +2,7 @@
 #define __metrics_h_
 
 #include <stdint.h>
+#include <string.h>
 #include "errors.h"
 
 #define ACCESS_FILE "log/access.txt"
