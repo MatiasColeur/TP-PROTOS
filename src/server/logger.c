@@ -69,8 +69,6 @@ void log_access(char * username, char * hostname, int port, int client_port, cha
         status 
     );
 
-    puts("debug");
-
     int value = ++concurrent_connections;
     fprintf(concurrenciesFile,"%d\n", value);
 
