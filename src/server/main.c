@@ -12,6 +12,7 @@
 #include "../../include/echo.h"
 #include "../../include/util.h"
 #include "../../include/selector.h"
+#include "../../include/logger.h"
 
 #define MAX_PENDING_CONNECTION_REQUESTS 128
 #define MAX_SOCKETS 1024
@@ -71,6 +72,10 @@ int main(int argc, const char* argv[]) {
         printf("[INF] Binding to %s\n", addrBuffer);
     } else
         perror("[WRN] Failed to getsockname()");
+
+
+    // logger initialization
+    init_log();
 
 
     // Selector initialization

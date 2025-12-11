@@ -14,6 +14,8 @@
 #define LOGS_FILE "log/logs.txt"
 #define ERRORS_FILE "log/errors.txt"
 
+void init_log(void);
+
 void log_access(char * username, char * password, char * hostname, int port);
 
 void log_exit(void);

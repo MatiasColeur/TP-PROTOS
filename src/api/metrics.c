@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <inttypes.h>
 
 static FILE * read_file(const char * file){
     FILE * logFile = fopen(file, "r"); //opens the file in read mode
@@ -29,10 +30,13 @@ uint64_t metrics_get_total_connections(void) {
 
 static uint64_t read_int_from_log_file(char * logFilePath) {
     FILE * f = read_file(logFilePath);
+    if (f == NULL) {
+        return -1;
+    }
     
     uint64_t value;
 
-    if (fscanf(f, "%llu", &value) != 1) {
+    if (fscanf(f, "%" SCNu64, &value) != 1) {
         print_error("[ERR] Couldn't read file");
         fclose(f);
         return -1;
@@ -91,7 +95,7 @@ void metrics_find_user(const char *username) {
 
 void metrics_print(void) {
     printf("=== Server metrics ===\n");
-    printf("Total connections (from log): %llu\n", metrics_get_total_connections());
+    printf("Total connections (from log): %" PRIu64 "\n", metrics_get_total_connections());
     // printf("Concurrent connections: %llu\n", concurrent_connections);
     // printf("Total bytes received: %llu\n", bytes_transfered);
 }
