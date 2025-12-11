@@ -1,4 +1,6 @@
 #include "../../include/api.h"
+#include "../../include/errors.h"
+#include "../../include/shared.h"
 
 void admin_send_request(int sockfd,
                                uint32_t id,

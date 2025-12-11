@@ -1,123 +1,13 @@
 #include "../../include/errors.h"
 #include "../../include/shared.h"
 #include "../../include/api.h"
+#include "../../include/client_utils.h"
 
 #define SERVER_IP   "127.0.0.1"
 #define SERVER_PORT 1080
 #define BUFFER_SIZE 512
 
 /* ==================== Handshake SOCKS5 (tu código) ==================== */
-
-void perform_handshake(int sockfd) {
-    char buf[BUFFER_SIZE];
-
-    // 1. Hello
-    print_info("Enviando Hello...\n");
-    char hello[] = { 0x05, 0x01, 0x02 }; // VER=5, NMETHODS=1, METHOD=0x02 (User/Pass)
-    if (send(sockfd, hello, sizeof(hello), 0) < 0) {
-        print_error("Error sending Hello");
-        exit(1);
-    }
-
-    // 2. Reply
-    ssize_t n = recv(sockfd, buf, BUFFER_SIZE, 0);
-    if (n < 2 || buf[1] != 0x02) {
-        fprintf(stderr, "Error: servidor no aceptó Auth User/Pass. Recibido: %02x\n", (unsigned char)buf[1]);
-        exit(1);
-    }
-
-    // 3. Subnegociación RFC1929
-    char username[] = "admin";
-    char password[] = "admin";
-
-    char auth_req[512];
-    int idx = 0;
-    auth_req[idx++] = 0x01;                 // Versión subnegociación
-    auth_req[idx++] = strlen(username);
-    memcpy(&auth_req[idx], username, strlen(username));
-    idx += strlen(username);
-    auth_req[idx++] = strlen(password);
-    memcpy(&auth_req[idx], password, strlen(password));
-    idx += strlen(password);
-
-    if (send(sockfd, auth_req, idx, 0) < 0) {
-        print_error("Error sending auth");
-        exit(1);
-    }
-
-    // 4. Respuesta
-    n = recv(sockfd, buf, BUFFER_SIZE, 0);
-    if (n >= 2 && buf[1] == 0x00) {
-        print_success("Authentication Completed");
-    } else {
-        print_error("Authentication Rejected");
-        exit(1);
-    }
-}
-
-static void verify_socks5_reply(int sockfd) {
-    char buf[BUFFER_SIZE];
-    ssize_t n = recv(sockfd, buf, BUFFER_SIZE, 0);
-
-    if (n < 4) {
-        print_error("Reply too short or connection closed");
-        exit(1);
-    }
-
-    uint8_t rep = buf[1];
-
-    if (rep == 0x00) {
-        print_success("SOCKS5 Request Granted (Tunnel Established)");
-    } else {
-        const char *err_msg = "Unknown Error";
-        switch (rep) {
-            case 0x01: err_msg = "General Failure"; break;
-            case 0x02: err_msg = "Connection not allowed"; break;
-            case 0x03: err_msg = "Network Unreachable"; break;
-            case 0x04: err_msg = "Host Unreachable"; break;
-            case 0x05: err_msg = "Connection Refused"; break;
-            case 0x06: err_msg = "TTL Expired"; break;
-            case 0x07: err_msg = "Command not supported"; break;
-            case 0x08: err_msg = "Address type not supported"; break;
-        }
-        fprintf(stderr, "[ERR] Server replied: 0x%02x (%s)\n", rep, err_msg);
-        print_error("SOCKS5 Request Failed");
-        exit(1);
-    }
-}
-
-/* CONNECT a la API via IPv6 loopback (::1) */
-void perform_request_ipv6(int sockfd, const char *ip6_str, int port) {
-    char buf[BUFFER_SIZE];
-    print_info("Enviando Request IPv6 CONNECT a [%s]:%d...\n", ip6_str, port);
-
-    int idx = 0;
-    buf[idx++] = 0x05; // VER
-    buf[idx++] = 0x01; // CMD: CONNECT
-    buf[idx++] = 0x00; // RSV
-    buf[idx++] = 0x04; // ATYP: IPv6
-
-    // Dirección IPv6 (16 bytes)
-    if (inet_pton(AF_INET6, ip6_str, &buf[idx]) <= 0) {
-        print_error("Invalid IPv6 address: %s", ip6_str);
-        exit(1);
-    }
-    idx += 16;
-
-    // Puerto
-    uint16_t p = htons(port);
-    memcpy(&buf[idx], &p, 2);
-    idx += 2;
-
-    if (send(sockfd, buf, idx, 0) < 0) {
-        print_error("Failed sending request");
-        exit(1);
-    }
-
-    verify_socks5_reply(sockfd);
-}
-
-
 
 /* Wrapper: ADD_USER "username password role" */
 static void admin_add_user(int sockfd,
@@ -204,7 +94,7 @@ int main(int argc, char *argv[]) {
     }
 
     // 3. Handshake + Auth
-    perform_handshake(sockfd);
+    perform_handshake(sockfd,"admin","admin");
 
     // 4. CONNECT a la Admin API: loopback IPv6 + puerto de la API
     perform_request_ipv6(sockfd, LOOPBACK_IPV6, ADMIN_API_PORT);

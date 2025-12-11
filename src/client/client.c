@@ -7,32 +7,18 @@
 #include "../../include/shared.h"
 #include "../../include/api.h"
 #include "../../include/client_utils.h"
+#include "../../include/parser_arguments.h"
 
-#define SERVER_IP "127.0.0.1"
-#define SERVER_PORT 1080
+
 
 int main(int argc, char *argv[]) {
-    int sockfd;
-    struct sockaddr_in serv_addr;
 
-    // 1. Crear socket TCP
-    if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-        print_error("Failed creating socket");
-        return 1;
-    }
+    ProgramArgs args;
+    parse_arguments(argc, argv, &args);
 
-    serv_addr.sin_family = AF_INET;
-    serv_addr.sin_port = htons(SERVER_PORT);
-
-    if (inet_pton(AF_INET, SERVER_IP, &serv_addr.sin_addr) <= 0) {
-        print_error("Invalid direction");
-        return 1;
-    }
-
-    // 2. Conectar al servidor SOCKS5
-    print_info("Connecting to Proxy SOCKS5 en %s:%d...", SERVER_IP, SERVER_PORT);
-    if (connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
-        print_error("Connection Failed (Is the server running?)");
+    int sockfd = create_client_socket(args.socks_addr, args.socks_port);
+    
+    if (sockfd < 0) {
         return 1;
     }
 

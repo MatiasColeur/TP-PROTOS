@@ -5,6 +5,15 @@
 
 #define BUFFER_SIZE 512
 
+
+/**
+ * @brief Crea un socket TCP y lo conecta al servidor especificado.
+ * @param server_address IP del servidor (ej: "127.0.0.1").
+ * @param server_port Puerto del servidor (ej: 1080).
+ * @return File Descriptor del socket conectado, o -1 en caso de error.
+ */
+int create_client_socket(const char *server_address, int server_port);
+
 /**
  * @brief Realiza el saludo inicial y la autenticación User/Pass (RFC 1929).
  * @param sockfd Socket conectado al servidor.

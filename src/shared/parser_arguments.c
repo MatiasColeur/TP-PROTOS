@@ -55,7 +55,7 @@ static void handle_user(const char *progname, char *arg, ProgramArgs *args) {
 
 void parse_arguments(int argc, char *argv[], ProgramArgs *args) {
     // 1. Valores por defecto
-    args->socks_addr      = "0.0.0.0";
+    args->socks_addr      = "127.0.0.1";
     args->socks_port      = 1080;
     
     args->mng_addr        = "127.0.0.1";
