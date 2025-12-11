@@ -53,7 +53,7 @@ static void handle_user(const char *progname, char *arg, ProgramArgs *args) {
     args->user_count++;
 }
 
-void parse_args(int argc, char *argv[], ProgramArgs *args) {
+void parse_arguments(int argc, char *argv[], ProgramArgs *args) {
     // 1. Valores por defecto
     args->socks_addr      = "0.0.0.0";
     args->socks_port      = 1080;
@@ -70,7 +70,7 @@ void parse_args(int argc, char *argv[], ProgramArgs *args) {
     while ((opt = getopt(argc, argv, "hl:NL:p:P:u:v")) != -1) {
         switch (opt) {
             case 'h':
-                usage(argv[0]);
+                print_help(argv[0]);
                 break;
             case 'l':
                 args->socks_addr = optarg;
@@ -95,7 +95,7 @@ void parse_args(int argc, char *argv[], ProgramArgs *args) {
                 break;
             default:
                 fprintf(stderr, "Opción desconocida '%c'\n", opt);
-                usage(argv[0]);
+                print_help(argv[0]);
         }
     }
 }

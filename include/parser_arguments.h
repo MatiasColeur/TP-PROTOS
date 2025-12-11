@@ -1,5 +1,5 @@
-#ifndef PARSER_H
-#define PARSER_H
+#ifndef PARSER_ARGUMENTS_H
+#define PARSER_ARGUMENTS_H
 
 #include <stdbool.h>
 
@@ -30,7 +30,7 @@ void print_help(const char *program_name);
  * @brief Parsea los argumentos de línea de comandos.
  * Llena la estructura args con los valores encontrados o defaults.
  */
-int parse_arguments(int argc, char *argv[], ProgramArgs *args);
+void parse_arguments(int argc, char *argv[], ProgramArgs *args);
 /**
  * @brief Valida la lógica de los argumentos.
  * Verifica rangos de puertos, punteros nulos, etc.

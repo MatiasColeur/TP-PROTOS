@@ -31,24 +31,24 @@ static const fd_handler accept_handler = {
 
 int main(int argc, const char* argv[]) {
     ProgramArgs args;
-    parse_args(argc, argv, &args);
+    parse_arguments(argc, argv, &args);
 
     // Configuración del Servidor SOCKS
-    print_info("SOCKS Listening on %s:%d\n", args.socks_addr, args.socks_port);
+    print_info("SOCKS Listening on %s:%d", args.socks_addr, args.socks_port);
     
     // Configuración del Servidor Management
-    print_info("Management Listening on %s:%d\n", args.mng_addr, args.mng_port);
+    print_info("Management Listening on %s:%d", args.mng_addr, args.mng_port);
 
     if (args.disectors_enabled) {
-        print_info("[Password Disectors: ENABLED\n");
+        print_info("[Password Disectors: ENABLED");
     } else {
-        print_info("Password Disectors: DISABLED\n");
+        print_info("Password Disectors: DISABLED");
     }
 
     // Registro de usuarios pasados por parámetro (si aplica a tu lógica)
     for(int i=0; i < args.user_count; i++) {
         // auth_register_user(args.users[i].name, args.users[i].pass);
-        print_info("User registered: %s:%s\n", args.users[i].name,args.users[i].pass);
+        print_info("User registered: %s:%s", args.users[i].name,args.users[i].pass);
     }
 
     // Disable buffering on stdout and stderr
