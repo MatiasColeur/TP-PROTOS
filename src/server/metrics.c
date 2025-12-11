@@ -3,7 +3,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-static FILE * get_file(const char * file){
+static FILE * read_file(const char * file){
     FILE * logFile = fopen(file, "r"); //opens the file in read mode
     if (!logFile) {
         print_error("[ERR] Couldn't open the log file");
@@ -14,7 +14,7 @@ static FILE * get_file(const char * file){
 
 
 uint64_t metrics_get_total_connections(void) {
-    FILE * f = get_file(ACCESS_FILE);
+    FILE * f = read_file(ACCESS_FILE);
 
     uint64_t count = 0;
     char buffer[1024];
@@ -28,7 +28,7 @@ uint64_t metrics_get_total_connections(void) {
 }
 
 static uint64_t read_int_from_log_file(char * logFilePath) {
-    FILE * f = get_file(logFilePath);
+    FILE * f = read_file(logFilePath);
     
     uint64_t value;
 
@@ -53,9 +53,9 @@ uint64_t metrics_get_bytes(void) {
     return read_int_from_log_file(BYTES_FILE);
 }
 
-void metrics_find_user(const char *filename, const char *username) {
+void metrics_find_user(const char *username) {
 
-    FILE *f = get_file(ACCESS_FILE);
+    FILE *f = read_file(ACCESS_FILE);
 
     char line[MAX_LINE];
 
@@ -64,17 +64,19 @@ void metrics_find_user(const char *filename, const char *username) {
         const char *p = strstr(line, "] - ");
         if (p == NULL) continue;
 
-        p += 4; // salto "] - "
+        p += strlen("] - ");
 
         char user_in_line[128];
         int i = 0;
 
-        while (p[i] != ':' && p[i] != '\0' && i < sizeof(user_in_line)-1) {
+        while (p[i] != ':' &&
+               p[i] != '\0' &&
+               i < (int)sizeof(user_in_line)-1) {
+
             user_in_line[i] = p[i];
             i++;
         }
         user_in_line[i] = '\0';
-
 
         if (strcmp(user_in_line, username) == 0) {
             printf("%s", line);
@@ -84,3 +86,12 @@ void metrics_find_user(const char *filename, const char *username) {
     fclose(f);
 }
 
+
+
+
+void metrics_print(void) {
+    printf("=== Server metrics ===\n");
+    printf("Total connections (from log): %llu\n", metrics_get_total_connections());
+    // printf("Concurrent connections: %llu\n", concurrent_connections);
+    // printf("Total bytes received: %llu\n", bytes_transfered);
+}

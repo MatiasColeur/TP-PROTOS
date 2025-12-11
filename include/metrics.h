@@ -9,7 +9,7 @@
 #define CONCURRENCIES_FILE "log/concurrencies.txt"
 #define BYTES_FILE "log/concurrencies.txt"
 
-#define MAX_LINE 512
+#define MAX_LINE 256
 
 uint64_t metrics_get_total_connections(void);
 
@@ -17,7 +17,7 @@ uint64_t metrics_get_concurrent_connections(void);
 
 uint64_t metrics_get_bytes(void);
 
-void metrics_find_user(const char *filename, const char *username);
+void metrics_find_user(const char * username);
 
 
 #endif
