@@ -1,5 +1,5 @@
 #include "../../include/socks5.h"
-#include "../../include/errors.h"
+
 
 #define BUFFER_SIZE         4096
 
@@ -200,7 +200,7 @@ static unsigned request_on_read    (struct selector_key *key);
 
 static void     connect_on_arrival (const unsigned state, struct selector_key *key);
 static unsigned connect_on_block   (struct selector_key *key);
-static unsigned connect_on_write(struct selector_key *key);
+static unsigned connect_on_write   (struct selector_key *key);
 
 static void     reply_on_arrival   (const unsigned state, struct selector_key *key);
 static unsigned reply_on_write     (struct selector_key *key);
@@ -363,9 +363,11 @@ void handle_new_client(fd_selector selector, int client_fd) {
         socks5_stm_init(conn);        
         socks5_buffers_init(conn);
         if(socks5_selector_register(conn)) {
-
             socks5_jump_to_initial_state(conn);
             return;
+        }
+        else{
+            close(client_fd);
         }
     }
 }
@@ -809,7 +811,7 @@ static unsigned hello_on_read(struct selector_key *key) {
     size_t n;
     uint8_t *wptr = buffer_write_ptr(rb, &n); // esta funcion encuentra un espacio contiguo de tam n para escribir en rb 
     ssize_t r = recv(key->fd, wptr, n, 0);   // lee desde el fd del cliente al buffer de recien 
-    if (r <= 0) {
+     if (r <= 0) {
         log_print_error("Invalid Connection");
         return SOCKS5_ERROR;  // error o cierre del cliente
     }
@@ -1025,7 +1027,7 @@ static unsigned request_on_read(struct selector_key *key) {
     buffer_read_adv(b, required_len);
 
     log_print_info("Request processed: CONNECT %s:%d (ATYP: %d)", conn->host, conn->port, atyp);
-    logAccess(conn->username,conn->password,conn->host,conn->port);
+    log_access(conn->username,conn->password,conn->host,conn->port);
 
     selector_set_interest_key(key, OP_NOOP);
     return SOCKS5_CONNECT;
@@ -1078,6 +1080,16 @@ static void * resolution_thread(void *arg) {
 static void connect_on_arrival(const unsigned state, struct selector_key *key) {
     socks5_connection_ptr conn = ATTACHMENT(key);
     (void) state;
+
+    if (conn->port == ADMIN_API_PORT &&
+        (strcmp(conn->host, LOOPBACK_IPV4) == 0 || strcmp(conn->host, LOOPBACK_IPV6) == 0)
+        && conn->role != ROLE_ADMIN) {
+        conn->connect_status = STATUS_CONNECTION_NOT_ALLOWED;
+        selector_set_interest_key(key, OP_WRITE);
+        conn->stm.current = &socks5_states[SOCKS5_REPLY];
+        reply_on_arrival(SOCKS5_REPLY, key);
+        return;
+    }
 
     // original key will disapear
     struct selector_key *k = malloc(sizeof(*key));
@@ -1241,7 +1253,7 @@ static void reply_on_arrival(const unsigned state, struct selector_key *key) {
         if (conn->connect_status == SUCCESS) {
             log_print_success("Reply: Success");
         } else {
-            log_print_error("Reply: Error (0x%02x)", conn->connect_status);
+            log_print_error("Reply: Error (0x%02x) %s", conn->connect_status,strerror(conn->connect_status));
         }
     } else {
         log_print_error("Buffer overflow");
@@ -1373,6 +1385,7 @@ static unsigned relay_on_write(struct selector_key *key) {
     size_t size;
     uint8_t *ptr = buffer_read_ptr(b_write, &size);
     ssize_t n = send(key->fd, ptr, size, MSG_NOSIGNAL);
+    log_bytes((uint64_t)n);
 
     if (n > 0) {
         buffer_read_adv(b_write, n);
@@ -1445,6 +1458,8 @@ static void
 socks5_close(struct selector_key *key) {
     socks5_connection_ptr conn = ATTACHMENT(key);
 
+    close(key->fd);
+
     stm_handler_close(&conn->stm, key);
 
     if (key->fd == conn->client_fd) {
@@ -1453,11 +1468,6 @@ socks5_close(struct selector_key *key) {
         conn->remote_fd = -1;
     }
 
-    if (stm_state(&conn->stm) == SOCKS5_CONNECT && conn->client_fd != -1) {
-        // El struct 'conn' sigue vivo y el cliente conectado.
-        // The struct conn still alive and client its connected
-        return;
-    }
     // verify if theres another socket open
     int other_fd = -1;
     if (conn->client_fd != -1) other_fd = conn->client_fd;
@@ -1471,6 +1481,8 @@ socks5_close(struct selector_key *key) {
     if (conn->client_fd == -1 && conn->remote_fd == -1) {
         socks5_kill_connection(conn);
     }
+
+    log_exit();
 }
 
 /* -------- handle_new_connection() auxiliares -------- */
