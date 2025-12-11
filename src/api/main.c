@@ -13,6 +13,7 @@
 
 #include "../../include/user_mgmt.h"
 #include "../../include/shared.h"
+#include "../../include/metrics.h"
 
 #define BACKLOG        5
 
@@ -196,18 +197,45 @@ static bool send_response(struct admin_connection *conn) {
 /* ----------- Procesamiento de comandos ----------- */
 
 static void process_metrics_request(struct admin_connection *conn) {
+    uint64_t value;
+
     switch (conn->cmd) {
-        case ADMIN_GET_CONCURRENT_CONN:
-        case ADMIN_GET_HIST_CONN:
-        case ADMIN_GET_BYTES_TRANSFERRED:
-            // TODO: implementar métricas reales
-            admin_prepare_error(conn, 1, "metrics_not_implemented");
+        case ADMIN_GET_CONCURRENT_CONN: {
+            value = metrics_get_concurrent_connections();
+            if (value == (uint64_t)-1) {
+                admin_prepare_error(conn, 1, "metrics_read_error");
+            } else {
+                admin_prepare_ok_uint64(conn, value);
+            }
             break;
+        }
+
+        case ADMIN_GET_HIST_CONN: {
+            value = metrics_get_total_connections();
+            if (value == (uint64_t)-1) {
+                admin_prepare_error(conn, 1, "metrics_read_error");
+            } else {
+                admin_prepare_ok_uint64(conn, value);
+            }
+            break;
+        }
+
+        case ADMIN_GET_BYTES_TRANSFERRED: {
+            value = metrics_get_bytes();
+            if (value == (uint64_t)-1) {
+                admin_prepare_error(conn, 1, "metrics_read_error");
+            } else {
+                admin_prepare_ok_uint64(conn, value);
+            }
+            break;
+        }
+
         default:
             admin_prepare_error(conn, 1, "invalid_metric_cmd");
             break;
     }
 }
+
 
 /* ----------- Roles / usuarios ----------- */
 
@@ -372,18 +400,81 @@ static void process_user_connections_request(struct admin_connection *conn) {
         free(body);
         return;
     }
+    free(body);
 
-    uint64_t count = 0;
-    int rc = 0; // TODO: integrar con librería de accesses
-    (void)username; // evitar warning hasta que uses username
-
-    if (rc == 0) {
-        admin_prepare_ok_uint64(conn, count);
-    } else {
-        admin_prepare_error(conn, 1, "user_connections_failed");
+    FILE *f = fopen(ACCESS_FILE, "r");
+    if (f == NULL) {
+        admin_prepare_error(conn, 1, "log_open_failed");
+        return;
     }
 
-    free(body);
+    char line[MAX_LINE];
+    uint8_t *buffer = NULL;
+    size_t buf_len  = 0;
+    size_t buf_cap  = 0;
+    uint64_t matches = 0;
+
+    while (fgets(line, sizeof(line), f) != NULL) {
+
+        const char *p = strstr(line, "] - ");
+        if (p == NULL) {
+            continue;
+        }
+        p += strlen("] - ");
+
+        char user_in_line[128];
+        int i = 0;
+        while (p[i] != ':' &&
+               p[i] != '\0' &&
+               i < (int)sizeof(user_in_line) - 1) {
+
+            user_in_line[i] = p[i];
+            i++;
+        }
+        user_in_line[i] = '\0';
+
+        if (strcmp(user_in_line, username) != 0) {
+            continue;
+        }
+
+        // Matcheó el usuario → agregamos esta línea al buffer
+        size_t line_len = strlen(line);
+
+        if (buf_len + line_len > buf_cap) {
+            size_t new_cap = buf_cap == 0 ? 1024 : buf_cap * 2;
+            while (new_cap < buf_len + line_len) {
+                new_cap *= 2;
+            }
+            uint8_t *tmp = realloc(buffer, new_cap);
+            if (tmp == NULL) {
+                fclose(f);
+                free(buffer);
+                admin_prepare_error(conn, 1, "no_memory");
+                return;
+            }
+            buffer = tmp;
+            buf_cap = new_cap;
+        }
+
+        memcpy(buffer + buf_len, line, line_len);
+        buf_len += line_len;
+        matches++;
+    }
+
+    fclose(f);
+
+    if (matches == 0) {
+        free(buffer);
+        admin_prepare_error(conn, 1, "no_entries_for_user");
+        return;
+    }
+
+    conn->resp_h.id     = conn->req_h.id;
+    conn->resp_h.status = 0;
+    conn->resp_h.len    = htons((uint16_t)buf_len);
+
+    conn->resp_body_len = (uint16_t)buf_len;
+    conn->resp_body     = buffer;  // se libera en el caller después de send_response()
 }
 
 /* ----------- Dispatcher ----------- */

@@ -2,6 +2,7 @@
 #define __loger_h_
 
 #include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <stdarg.h>
 #include <time.h>
