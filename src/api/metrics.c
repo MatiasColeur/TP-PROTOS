@@ -60,29 +60,30 @@ uint64_t metrics_get_bytes(void) {
 void metrics_find_user(const char *username) {
 
     FILE *f = read_file(ACCESS_FILE);
+    if (f == NULL) {
+        perror("Error abriendo access file");
+        return;
+    }
 
     char line[MAX_LINE];
 
     while (fgets(line, sizeof(line), f) != NULL) {
 
-        const char *p = strstr(line, "] - ");
-        if (p == NULL) continue;
+        char copy[MAX_LINE];
+        strncpy(copy, line, sizeof(copy));
+        copy[sizeof(copy)-1] = '\0';   // <-- FIX importante
 
-        p += strlen("] - ");
+        // parseo por TAB
+        char *field1 = strtok(copy, "\t");  // timestamp
+        char *field2 = strtok(NULL, "\t");  // username  <---- IMPORTANTE
 
-        char user_in_line[128];
-        int i = 0;
+        if (field2 == NULL)
+            continue;
 
-        while (p[i] != ':' &&
-               p[i] != '\0' &&
-               i < (int)sizeof(user_in_line)-1) {
+        // remover salto de línea
+        field2[strcspn(field2, "\r\n")] = '\0';
 
-            user_in_line[i] = p[i];
-            i++;
-        }
-        user_in_line[i] = '\0';
-
-        if (strcmp(user_in_line, username) == 0) {
+        if (strcmp(field2, username) == 0) {
             printf("%s", line);
         }
     }
@@ -91,11 +92,3 @@ void metrics_find_user(const char *username) {
 }
 
 
-
-
-void metrics_print(void) {
-    printf("=== Server metrics ===\n");
-    printf("Total connections (from log): %" PRIu64 "\n", metrics_get_total_connections());
-    // printf("Concurrent connections: %llu\n", concurrent_connections);
-    // printf("Total bytes received: %llu\n", bytes_transfered);
-}
