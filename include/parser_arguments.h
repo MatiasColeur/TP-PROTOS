@@ -1,17 +1,27 @@
 #ifndef PARSER_H
 #define PARSER_H
 
-// Structure to hold all program parameters
+#include <stdbool.h>
+
+#define MAX_USERS 10
+
 typedef struct {
-    char *addr; // Dirección IP (ej: "0.0.0.0" o "127.0.0.1")
-    int port;        // Puerto (ej: 1080)
+    char *name;
+    char *pass;
+} User;
 
-    // Solo para el cliente de stress/prueba:
-    char *target_host;
-    int target_port;
-    int concurrency;
+typedef struct {
+    char *socks_addr;       // -l
+    int   socks_port;       // -p
+    
+    char *mng_addr;         // -L
+    int   mng_port;         // -P
+    
+    bool  disectors_enabled;// -N (true por defecto, false si se pasa -N)
+    
+    User  users[MAX_USERS]; // -u
+    int   user_count;
 } ProgramArgs;
-
 
 // Function prototypes
 void print_help(const char *program_name);
