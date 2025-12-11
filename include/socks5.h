@@ -23,6 +23,8 @@
 #include "stm.h"
 #include "buffer.h"
 #include "auth.h"
+#include "errors.h"
+#include "shared.h"
 
 #define SUCCESS 0
 #define IPV4_N 1

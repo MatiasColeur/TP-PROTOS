@@ -5,6 +5,7 @@
 #include <arpa/inet.h>
 #include <errno.h>
 #include "../../include/errors.h"
+#include "../../include/shared.h"
 
 #define SERVER_IP "127.0.0.1"
 #define SERVER_PORT 1080
@@ -201,7 +202,7 @@ void perform_request_ipv4(int sockfd, const char *ip_str, int port) {
  * Envía datos a través del túnel establecido para probar la conexión
  */
 void test_tunnel(int sockfd) {
-    print_info("Enviando HTTP GET a google.com a través del túnel...");
+    // print_info("Enviando HTTP GET a google.com a través del túnel...");
     
     char http_msg[] = "GET / HTTP/1.1\r\nHost: google.com\r\nConnection: close\r\n\r\n";
     
@@ -252,10 +253,11 @@ int main(int argc, char *argv[]) {
     // perform_request_domain(sockfd, "google.com", 80);
 
     // Caso B: IPv4 (Prueba tu servidor web local o una IP pública)
-    perform_request_ipv4(sockfd, "8.8.8.8", 80); // IP de Google
+    // perform_request_ipv4(sockfd, "8.8.8.8", 80); // IP de Google
 
     // Caso C: IPv6 (Si tienes red IPv6 o para probar loopback)
     // perform_request_ipv6(sockfd, "::1", 8080);
+    perform_request_ipv6(sockfd, LOOPBACK_IPV6, ADMIN_API_PORT);
     test_tunnel(sockfd);        // Data Relay
 
     close(sockfd);

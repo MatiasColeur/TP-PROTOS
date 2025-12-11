@@ -4,7 +4,6 @@
 #include <stdbool.h>
 #include <string.h>
 #include <errno.h>
-
 #include <unistd.h>
 #include <signal.h>
 #include <sys/types.h>
@@ -12,7 +11,8 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
-#define ADMIN_API_PORT 5555
+#include "../../include/shared.h"
+
 #define BACKLOG        5
 
 struct admin_req_header {

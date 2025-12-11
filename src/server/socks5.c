@@ -1,5 +1,5 @@
 #include "../../include/socks5.h"
-#include "../../include/errors.h"
+
 
 #define BUFFER_SIZE         4096
 
@@ -1078,6 +1078,16 @@ static void * resolution_thread(void *arg) {
 static void connect_on_arrival(const unsigned state, struct selector_key *key) {
     socks5_connection_ptr conn = ATTACHMENT(key);
     (void) state;
+
+    if (conn->port == ADMIN_API_PORT &&
+        (strcmp(conn->host, LOOPBACK_IPV4) == 0 || strcmp(conn->host, LOOPBACK_IPV6) == 0)
+        && conn->role != ROLE_ADMIN) {
+        conn->connect_status = STATUS_CONNECTION_NOT_ALLOWED;
+        selector_set_interest_key(key, OP_WRITE);
+        conn->stm.current = &socks5_states[SOCKS5_REPLY];
+        reply_on_arrival(SOCKS5_REPLY, key);
+        return;
+    }
 
     // original key will disapear
     struct selector_key *k = malloc(sizeof(*key));

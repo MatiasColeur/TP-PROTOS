@@ -1,5 +1,4 @@
 #include "../../include/logger.h"
-#include "../../include/errors.h"
 
 
 static FILE * get_file(const char * file){

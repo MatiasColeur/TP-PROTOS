@@ -1,4 +1,4 @@
-#include <stdio.h>
+#include "../../include/shared.h"
 
 int hello(void) {
     return 1;

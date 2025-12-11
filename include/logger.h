@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <stdarg.h>
 #include <time.h>
+#include "errors.h"
 
 #define ACCESS_FILE "log/access.txt"
 #define LOGS_FILE "log/logs.txt"
