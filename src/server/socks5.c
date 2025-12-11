@@ -1260,6 +1260,7 @@ static unsigned reply_on_write(struct selector_key *key) {
     uint8_t *ptr = buffer_read_ptr(b, &count);
 
     ssize_t n = send(key->fd, ptr, count, MSG_NOSIGNAL);
+    log_bytes((uint64_t)n);
 
     if (n == -1) {
         // Error in the socket 
@@ -1373,6 +1374,7 @@ static unsigned relay_on_write(struct selector_key *key) {
     size_t size;
     uint8_t *ptr = buffer_read_ptr(b_write, &size);
     ssize_t n = send(key->fd, ptr, size, MSG_NOSIGNAL);
+    log_bytes((uint64_t)n);
 
     if (n > 0) {
         buffer_read_adv(b_write, n);

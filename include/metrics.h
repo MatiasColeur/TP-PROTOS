@@ -6,6 +6,7 @@
 
 #define ACCESS_FILE "log/access.txt"
 #define CONCURRENCIES_FILE "log/concurrencies.txt"
+#define BYTES_FILE "log/concurrencies.txt"
 
 void metrics_init(const char *access_log_path);
 

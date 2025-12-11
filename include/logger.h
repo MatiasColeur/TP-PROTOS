@@ -8,12 +8,15 @@
 
 #define ACCESS_FILE "log/access.txt"
 #define CONCURRENCIES_FILE "log/concurrencies.txt"
+#define BYTES_FILE "log/bytes.txt"
 #define LOGS_FILE "log/logs.txt"
 #define ERRORS_FILE "log/errors.txt"
 
 void log_access(char * username, char * password, char * hostname, int port);
 
 void log_exit(void);
+
+void log_bytes(uint64_t bytes);
 
 /**
  * @brief Registra un mensaje informativo en el archivo de log.
