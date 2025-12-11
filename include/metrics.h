@@ -7,7 +7,7 @@
 
 #define ACCESS_FILE "log/access.txt"
 #define CONCURRENCIES_FILE "log/concurrencies.txt"
-#define BYTES_FILE "log/concurrencies.txt"
+#define BYTES_FILE "log/bytes.txt"
 
 #define MAX_LINE 256
 
