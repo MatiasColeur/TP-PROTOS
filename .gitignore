@@ -58,6 +58,7 @@ obj/
 *.bin
 *.txt
 *.json
+*.csv
 
 # Visual Studio Code stuffs
 .vscode/

@@ -2,6 +2,10 @@
 #define API_H
 
 #include <stdint.h>
+#include <stddef.h>
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
 
 #define ADMIN_API_PORT 5555
 #define LOOPBACK_IPV4 "127.0.0.1"
@@ -40,5 +44,7 @@ enum admin_cmd {
 
     ADMIN_QUIT                  = 0xFF,
 };
+
+void admin_send_request(int sockfd,uint32_t id,uint8_t cmd,const char *payload);
 
 #endif

@@ -171,64 +171,7 @@ static void perform_request_ipv6(int sockfd, const char *ip6_str, int port) {
     verify_socks5_reply(sockfd);
 }
 
-/* -------- Cliente admin: envío de requests -------- */
 
-static void admin_send_request(int sockfd,
-                               uint32_t id,
-                               uint8_t  cmd,
-                               const char *body,
-                               uint16_t body_len) {
-
-    struct admin_req_header h;
-    h.id  = htonl(id);
-    h.cmd = cmd;
-    h.len = htons(body_len);
-
-    printf("[ADMIN] Sending cmd=0x%02X id=%u len=%u\n", cmd, id, body_len);
-
-    if (!write_exact(sockfd, &h, sizeof(h))) {
-        fprintf(stderr, "[ADMIN] Error sending header\n");
-        exit(1);
-    }
-
-    if (body_len > 0 && body != NULL) {
-        if (!write_exact(sockfd, body, body_len)) {
-            fprintf(stderr, "[ADMIN] Error sending body\n");
-            exit(1);
-        }
-    }
-
-    struct admin_resp_header rh;
-    if (!read_exact(sockfd, &rh, sizeof(rh))) {
-        fprintf(stderr, "[ADMIN] Error reading response header\n");
-        exit(1);
-    }
-
-    uint32_t resp_id   = ntohl(rh.id);
-    uint8_t  status    = rh.status;
-    uint16_t resp_len  = ntohs(rh.len);
-
-    printf("[ADMIN] Resp id=%u status=%u len=%u\n",
-           resp_id, status, resp_len);
-
-    if (resp_len > 0) {
-        char *payload = malloc(resp_len + 1);
-        if (!payload) {
-            fprintf(stderr, "[ADMIN] No memory for payload\n");
-            exit(1);
-        }
-        if (!read_exact(sockfd, payload, resp_len)) {
-            free(payload);
-            fprintf(stderr, "[ADMIN] Error reading response body\n");
-            exit(1);
-        }
-        payload[resp_len] = '\0';
-        printf("[ADMIN] Payload: %s\n", payload);
-        free(payload);
-    } else {
-        printf("[ADMIN] Payload: <empty>\n");
-    }
-}
 
 /* -------- main -------- */
 
@@ -274,13 +217,13 @@ int main(int argc, char *argv[]) {
     uint32_t id = 1;
 
     /* a) Conexiones históricas */
-    admin_send_request(sockfd, id++, ADMIN_GET_HIST_CONN, NULL, 0);
+    admin_send_request(sockfd, id++, ADMIN_GET_HIST_CONN, NULL);
 
     /* b) Conexiones concurrentes */
-    admin_send_request(sockfd, id++, ADMIN_GET_CONCURRENT_CONN, NULL, 0);
+    admin_send_request(sockfd, id++, ADMIN_GET_CONCURRENT_CONN, NULL);
 
     /* c) Bytes transferidos */
-    admin_send_request(sockfd, id++, ADMIN_GET_BYTES_TRANSFERRED, NULL, 0);
+    admin_send_request(sockfd, id++, ADMIN_GET_BYTES_TRANSFERRED, NULL);
 
     /* d) Conexiones de un usuario (líneas de log) */
     char body[256];
@@ -288,12 +231,11 @@ int main(int argc, char *argv[]) {
     if (len < 0 || len >= (int)sizeof(body)) {
         fprintf(stderr, "[ADMIN] Username too long\n");
     } else {
-        admin_send_request(sockfd, id++, ADMIN_GET_USER_CONNECTIONS,
-                           body, (uint16_t)len);
+        admin_send_request(sockfd, id++, ADMIN_GET_USER_CONNECTIONS, body);
     }
 
     /* QUIT para cerrar prolijo del lado de la API */
-    admin_send_request(sockfd, id++, ADMIN_QUIT, NULL, 0);
+    admin_send_request(sockfd, id++, ADMIN_QUIT, NULL);
 
     close(sockfd);
     return 0;
