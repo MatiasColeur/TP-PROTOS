@@ -14,6 +14,7 @@
 #include "../../include/shared.h"
 #include "../../include/metrics.h"
 #include "../../include/api.h"
+#include "../../include/socks5.h"
 #include "../../include/auth.h"
 
 #define BACKLOG        5
@@ -207,20 +208,19 @@ static void process_metrics_request(struct admin_connection *conn) {
 
 /* ----------- Roles / usuarios ----------- */
 
-static bool parse_role_string(const char *role_str,
-                              char *out_role,
-                              size_t out_size) {
-    if (!out_role || out_size == 0) return false;
+static bool parse_role(const char *role_str, client_role *out_role) {
+    if (out_role == NULL || role_str == NULL) return false;
 
-    if (strcmp(role_str, "admin") == 0) {
-        strncpy(out_role, "admin", out_size - 1);
-    } else if (strcmp(role_str, "user") == 0) {
-        strncpy(out_role, "user", out_size - 1);
-    } else {
-        strncpy(out_role, role_str, out_size - 1);
+    if (strcmp(role_str, "admin") == 0 || strcmp(role_str, "1") == 0) {
+        *out_role = ROLE_ADMIN;
+        return true;
     }
-    out_role[out_size - 1] = '\0';
-    return true;
+    if (strcmp(role_str, "user") == 0 || strcmp(role_str, "0") == 0) {
+        *out_role = ROLE_USER;
+        return true;
+    }
+
+    return false; // unknown role token
 }
 
 /**
@@ -244,6 +244,7 @@ static void process_user_mgmt_request(struct admin_connection *conn) {
     char username[128] = {0};
     char password[128] = {0};
     char role_str[64]  = {0};
+    client_role parsed_role = ROLE_USER;
     int ok;
 
     switch (conn->cmd) {
@@ -263,10 +264,12 @@ static void process_user_mgmt_request(struct admin_connection *conn) {
 
         user_record updated = *rec;
 
-        if (!parse_role_string(role_str, updated.role, sizeof updated.role)) {
+        if (!parse_role(role_str, &parsed_role)) {
             admin_prepare_error(conn, 1, "invalid_role");
             break;
         }
+
+        snprintf(updated.role, sizeof updated.role, "%d", parsed_role);
 
         ok = user_store_update(username, &updated);
         if (!ok) {
@@ -296,10 +299,12 @@ static void process_user_mgmt_request(struct admin_connection *conn) {
         strncpy(rec.user, username, sizeof rec.user - 1);
         strncpy(rec.pass_hash, output , sizeof rec.pass_hash - 1); // sin hash
 
-        if (!parse_role_string(role_str, rec.role, sizeof rec.role)) {
+        if (!parse_role(role_str, &parsed_role)) {
             admin_prepare_error(conn, 1, "invalid_role");
             break;
         }
+
+        snprintf(rec.role, sizeof rec.role, "%d", parsed_role);
 
         ok = user_store_add(&rec);
         if (!ok) {
@@ -566,7 +571,7 @@ static void handle_admin_client(int client_fd) {
 
 /* ----------- main ----------- */
 
-int main(int argc, char const *argv[]) {
+int main(int argc, const char *argv[]) {
     (void)argc;
     (void)argv;
 

@@ -30,7 +30,7 @@ void print_help(const char *program_name);
  * @brief Parsea los argumentos de línea de comandos.
  * Llena la estructura args con los valores encontrados o defaults.
  */
-void parse_arguments(int argc, char *argv[], ProgramArgs *args);
+void parse_arguments(int argc, const char* argv[], ProgramArgs *args);
 /**
  * @brief Valida la lógica de los argumentos.
  * Verifica rangos de puertos, punteros nulos, etc.

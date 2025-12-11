@@ -15,6 +15,7 @@
 #include "../../include/logger.h"
 #include "../../include/parser_arguments.h"
 #include "../../include/bootstrap.h"
+#include "../../include/socks5.h"
 
 #define MAX_PENDING_CONNECTION_REQUESTS 128
 #define MAX_SOCKETS 1024
@@ -33,6 +34,7 @@ static const fd_handler accept_handler = {
 int main(int argc, const char* argv[]) {
     ProgramArgs args;
     parse_arguments(argc, argv, &args);
+    socks5_set_management_endpoint(args.mng_addr, (uint16_t)args.mng_port);
 
     // Configuración del Servidor SOCKS
     print_info("SOCKS Listening on %s:%d", args.socks_addr, args.socks_port);

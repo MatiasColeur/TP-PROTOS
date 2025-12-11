@@ -65,7 +65,7 @@ static void admin_quit(int sockfd, uint32_t *id_counter) {
 
 /* ==================== main ==================== */
 
-int main(int argc, char *argv[]) {
+int main(int argc, const char *argv[]) {
     (void)argc;
     (void)argv;
 

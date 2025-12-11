@@ -175,7 +175,7 @@ static void perform_request_ipv6(int sockfd, const char *ip6_str, int port) {
 
 /* -------- main -------- */
 
-int main(int argc, char *argv[]) {
+int main(int argc, const char *argv[]) {
     int sockfd;
     struct sockaddr_in serv_addr;
 

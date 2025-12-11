@@ -67,5 +67,7 @@ typedef enum {
     ROLE_ADMIN = 0x01,
 } client_role;
 
+void socks5_set_management_endpoint(const char *addr, uint16_t port);
+
 static uint8_t errno_to_socks_status(int err);
 #endif

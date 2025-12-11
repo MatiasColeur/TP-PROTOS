@@ -1,6 +1,5 @@
 #include "../../include/bootstrap.h"
 
-#define BOOTSTRAP_SERVER_IP "127.0.0.1"
 #define BOOTSTRAP_BUFFER_SIZE 512
 
 static void bootstrap_perform_handshake(int sockfd) {
@@ -48,22 +47,33 @@ static void bootstrap_perform_handshake(int sockfd) {
     }
 }
 
-static void bootstrap_perform_request_ipv6(int sockfd,
-                                           const char *ip6_str,
-                                           int port) {
+static void bootstrap_perform_request(int sockfd,
+                                      const char *addr_str,
+                                      int port) {
     char buf[BOOTSTRAP_BUFFER_SIZE];
     int idx = 0;
 
     buf[idx++] = 0x05; // VER
     buf[idx++] = 0x01; // CMD: CONNECT
     buf[idx++] = 0x00; // RSV
-    buf[idx++] = 0x04; // ATYP: IPv6
+    uint8_t atyp;
 
-    if (inet_pton(AF_INET6, ip6_str, &buf[idx]) <= 0) {
-        print_error("bootstrap: invalid IPv6 address: %s", ip6_str);
+    uint8_t addr_bin[16];
+    size_t addr_len = 0;
+    if (inet_pton(AF_INET6, addr_str, addr_bin) == 1) {
+        atyp = 0x04;
+        addr_len = 16;
+    } else if (inet_pton(AF_INET, addr_str, addr_bin) == 1) {
+        atyp = 0x01;
+        addr_len = 4;
+    } else {
+        print_error("bootstrap: invalid address: %s", addr_str);
         exit(1);
     }
-    idx += 16;
+
+    buf[idx++] = atyp;
+    memcpy(&buf[idx], addr_bin, addr_len);
+    idx += (int)addr_len;
 
     uint16_t p = htons((uint16_t)port);
     memcpy(&buf[idx], &p, 2);
@@ -123,27 +133,39 @@ void bootstrap_cli_users_via_api(const ProgramArgs *args) {
     }
 
     int sockfd;
-    struct sockaddr_in serv_addr;
+    struct sockaddr_storage serv_addr;
+    socklen_t serv_len = 0;
 
-    if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-        print_error("[BOOTSTRAP] socket()");
+    memset(&serv_addr, 0, sizeof(serv_addr));
+    // Try IPv6 first, then IPv4
+    struct sockaddr_in6 *addr6 = (struct sockaddr_in6 *)&serv_addr;
+    struct sockaddr_in  *addr4 = (struct sockaddr_in *)&serv_addr;
+
+    if (inet_pton(AF_INET6, args->socks_addr, &addr6->sin6_addr) == 1) {
+        addr6->sin6_family = AF_INET6;
+        addr6->sin6_port   = htons(args->socks_port);
+        serv_len = sizeof(struct sockaddr_in6);
+        sockfd = socket(AF_INET6, SOCK_STREAM, 0);
+    } else if (inet_pton(AF_INET, args->socks_addr, &addr4->sin_addr) == 1) {
+        addr4->sin_family = AF_INET;
+        addr4->sin_port   = htons(args->socks_port);
+        serv_len = sizeof(struct sockaddr_in);
+        sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    } else {
+        print_error("[BOOTSTRAP] invalid address %s", args->socks_addr);
         return;
     }
 
-    memset(&serv_addr, 0, sizeof(serv_addr));
-    serv_addr.sin_family = AF_INET;
-    serv_addr.sin_port   = htons(args->socks_port);
-
-    if (inet_pton(AF_INET, BOOTSTRAP_SERVER_IP, &serv_addr.sin_addr) <= 0) {
-        print_error("[BOOTSTRAP] invalid address %s", BOOTSTRAP_SERVER_IP);
+    if (sockfd < 0) {
+        print_error("[BOOTSTRAP] socket()");
         close(sockfd);
         return;
     }
 
     print_info("[BOOTSTRAP] Connecting to SOCKS5 in %s:%d...\n",
-               BOOTSTRAP_SERVER_IP, args->socks_port);
+               args->socks_addr, args->socks_port);
 
-    if (connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
+    if (connect(sockfd, (struct sockaddr *)&serv_addr, serv_len) < 0) {
         print_error("[BOOTSTRAP] connect() failed, check if api is running");
         close(sockfd);
         return;
@@ -152,8 +174,8 @@ void bootstrap_cli_users_via_api(const ProgramArgs *args) {
     // Handshake + auth as admin
     bootstrap_perform_handshake(sockfd);
 
-    // CONNECT via SOCKS to Admin API (loopback v6 + admin port)
-    bootstrap_perform_request_ipv6(sockfd, LOOPBACK_IPV6, ADMIN_API_PORT);
+    // CONNECT via SOCKS to Admin API (management addr/port)
+    bootstrap_perform_request(sockfd, args->mng_addr, args->mng_port);
 
     uint32_t req_id = 1;
 

@@ -127,7 +127,7 @@ void *worker_thread(void *arg) {
     return NULL;
 }
 
-int main(int argc, char *argv[]) {
+int main(int argc, const char *argv[]) {
     if (argc < 4) {
         fprintf(stderr, "Uso: %s <concurrency> <target_host> <target_port>\n", argv[0]);
         fprintf(stderr, "Ejemplo: %s 500 127.0.0.1 9999\n", argv[0]);

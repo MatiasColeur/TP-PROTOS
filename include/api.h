@@ -8,7 +8,7 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 
-#define ADMIN_API_PORT 5555
+#define ADMIN_API_PORT 8080
 #define LOOPBACK_IPV4 "127.0.0.1"
 #define LOOPBACK_IPV6 "::1"
 #define USER_DB_PATH "users.csv"

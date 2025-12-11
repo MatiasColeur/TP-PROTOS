@@ -12,6 +12,9 @@
 #define SOCKS5_STATES  (sizeof(socks5_states) / sizeof(socks5_states[0]))
 #define ATTACHMENT(key) ((struct socks5_connection *)(key)->data)
 
+static char management_host[MAX_HOSTNAME_LENGTH + 1] = LOOPBACK_IPV4;
+static uint16_t management_port = ADMIN_API_PORT;
+
 /**
  * @brief Per-connection state and resources for a SOCKS5 session.
  */
@@ -560,7 +563,6 @@ static unsigned request_on_read(struct selector_key *key) {
     buffer_read_adv(b, required_len);
 
     log_print_info("Request processed: CONNECT %s:%d (ATYP: %d)", conn->host, conn->port, atyp);
-
     struct sockaddr_storage addr;
     socklen_t addr_len2 = sizeof(addr);
 
@@ -587,7 +589,6 @@ static unsigned request_on_read(struct selector_key *key) {
         client_ip,          // client_ip
         conn->connect_status // status
     );
-
     selector_set_interest_key(key, OP_NOOP);
     return SOCKS5_CONNECT;
 }
@@ -640,8 +641,8 @@ static void connect_on_arrival(const unsigned state, struct selector_key *key) {
     socks5_connection_ptr conn = ATTACHMENT(key);
     (void) state;
 
-    if (conn->port == ADMIN_API_PORT &&
-        (strcmp(conn->host, LOOPBACK_IPV4) == 0 || strcmp(conn->host, LOOPBACK_IPV6) == 0)
+    if (conn->port == management_port &&
+        strcmp(conn->host, management_host) == 0
         && conn->role != ROLE_ADMIN) {
         conn->connect_status = STATUS_CONNECTION_NOT_ALLOWED;
         selector_set_interest_key(key, OP_WRITE);
@@ -1138,4 +1139,12 @@ static uint8_t errno_to_socks_status(int err) {
         case EADDRNOTAVAIL: return STATUS_ADDRESS_TYPE_NOT_SUPPORTED;
         default:           return STATUS_GENERAL_SERVER_FAILURE;
     }
+}
+
+void socks5_set_management_endpoint(const char *addr, uint16_t port) {
+    if (addr != NULL) {
+        strncpy(management_host, addr, sizeof(management_host) - 1);
+        management_host[sizeof(management_host) - 1] = '\0';
+    }
+    management_port = port;
 }

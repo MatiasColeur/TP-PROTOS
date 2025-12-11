@@ -53,12 +53,12 @@ static void handle_user(const char *progname, char *arg, ProgramArgs *args) {
     args->user_count++;
 }
 
-void parse_arguments(int argc, char *argv[], ProgramArgs *args) {
+void parse_arguments(int argc, const char* argv[], ProgramArgs *args) {
     // 1. Valores por defecto
     args->socks_addr      = "127.0.0.1";
     args->socks_port      = 1080;
     
-    args->mng_addr        = "127.0.0.1";
+    args->mng_addr        = "::1";
     args->mng_port        = 8080;
     
     args->disectors_enabled = true; // Por defecto habilitados
@@ -67,7 +67,7 @@ void parse_arguments(int argc, char *argv[], ProgramArgs *args) {
     int opt;
     // hl:NL:p:P:u:v
     // : indica que la opción requiere un argumento
-    while ((opt = getopt(argc, argv, "hl:NL:p:P:u:v")) != -1) {
+    while ((opt = getopt(argc, (char *const *) argv, "hl:NL:p:P:u:v")) != -1) {
         switch (opt) {
             case 'h':
                 print_help(argv[0]);
