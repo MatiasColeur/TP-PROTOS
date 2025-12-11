@@ -13,7 +13,7 @@
 
 void log_access(char * username, char * password, char * hostname, int port);
 
-void log_exit();
+void log_exit(void);
 
 /**
  * @brief Registra un mensaje informativo en el archivo de log.

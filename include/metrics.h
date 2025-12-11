@@ -2,6 +2,10 @@
 #define __metrics_h_
 
 #include <stdint.h>
+#include "errors.h"
+
+#define ACCESS_FILE "log/access.txt"
+#define CONCURRENCIES_FILE "log/concurrencies.txt"
 
 void metrics_init(const char *access_log_path);
 

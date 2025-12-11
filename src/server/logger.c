@@ -40,7 +40,7 @@ void log_access(char * username, char * password, char * hostname, int port) {
     fclose(concurrenciesFile);
 }
 
-void log_exit() {
+void log_exit(void) {
     FILE * concurrenciesFile = get_file_write(CONCURRENCIES_FILE);
 
     if (!concurrenciesFile) return;
