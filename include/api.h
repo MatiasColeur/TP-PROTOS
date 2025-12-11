@@ -1,8 +1,12 @@
 #ifndef API_H
 #define API_H
 
-
 #include <stdint.h>
+
+#define ADMIN_API_PORT 5555
+#define LOOPBACK_IPV4 "127.0.0.1"
+#define LOOPBACK_IPV6 "::1"
+#define USER_DB_PATH "users.csv"
 
 struct admin_req_header {
     uint32_t id;

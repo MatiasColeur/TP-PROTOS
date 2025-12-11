@@ -25,6 +25,7 @@
 #include "auth.h"
 #include "errors.h"
 #include "shared.h"
+#include "api.h"
 
 #define SUCCESS 0
 #define IPV4_N 1
