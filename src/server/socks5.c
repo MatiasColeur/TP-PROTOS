@@ -363,9 +363,11 @@ void handle_new_client(fd_selector selector, int client_fd) {
         socks5_stm_init(conn);        
         socks5_buffers_init(conn);
         if(socks5_selector_register(conn)) {
-
             socks5_jump_to_initial_state(conn);
             return;
+        }
+        else{
+            close(client_fd);
         }
     }
 }
@@ -1456,20 +1458,16 @@ static void
 socks5_close(struct selector_key *key) {
     socks5_connection_ptr conn = ATTACHMENT(key);
 
+    close(key->fd);
+
     stm_handler_close(&conn->stm, key);
 
-    close(key->fd);
     if (key->fd == conn->client_fd) {
         conn->client_fd = -1;
     } else if (key->fd == conn->remote_fd) {
         conn->remote_fd = -1;
     }
 
-    if (stm_state(&conn->stm) == SOCKS5_CONNECT && conn->client_fd != -1) {
-        // El struct 'conn' sigue vivo y el cliente conectado.
-        // The struct conn still alive and client its connected
-        return;
-    }
     // verify if theres another socket open
     int other_fd = -1;
     if (conn->client_fd != -1) other_fd = conn->client_fd;
