@@ -8,7 +8,7 @@
 EJECUTABLE="./bin/socks5"
 
 # Configuración SOCKS (Proxy)
-SOCKS_ADDR="0.0.0.0"   # Escuchar en todas las interfaces
+SOCKS_ADDR="127.0.0.1"   # Escuchar en todas las interfaces
 SOCKS_PORT="1080"
 
 # Configuración Management (Admin)
