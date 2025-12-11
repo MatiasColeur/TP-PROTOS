@@ -11,38 +11,11 @@
 #include <netinet/in.h>
 
 #include "../../include/shared.h"    // LOOPBACK_IPV6, ADMIN_API_PORT, read_exact, write_exact
+#include "../../include/api.h"
 
 #define SERVER_IP   "127.0.0.1"
 #define SERVER_PORT 1080
 #define BUFFER_SIZE 512
-
-/* -------- Protocolo admin (debe matchear el server) -------- */
-
-struct admin_req_header {
-    uint32_t id;
-    uint8_t  cmd;
-    uint16_t len;
-} __attribute__((packed));
-
-struct admin_resp_header {
-    uint32_t id;
-    uint8_t  status;
-    uint16_t len;
-} __attribute__((packed));
-
-enum admin_cmd {
-    ADMIN_GET_CONCURRENT_CONN   = 0x01,
-    ADMIN_GET_HIST_CONN         = 0x02,
-    ADMIN_GET_BYTES_TRANSFERRED = 0x03,
-
-    ADMIN_SET_USER_ROLE         = 0x10,
-    ADMIN_ADD_USER              = 0x11,
-    ADMIN_DELETE_USER           = 0x12,
-
-    ADMIN_GET_USER_CONNECTIONS  = 0x20,
-
-    ADMIN_QUIT                  = 0xFF,
-};
 
 /* -------- SOCKS5: handshake + CONNECT -------- */
 
