@@ -13,6 +13,7 @@
 #include "../../include/util.h"
 #include "../../include/selector.h"
 #include "../../include/logger.h"
+#include "../../include/parser_arguments.h"
 
 #define MAX_PENDING_CONNECTION_REQUESTS 128
 #define MAX_SOCKETS 1024
@@ -29,6 +30,27 @@ static const fd_handler accept_handler = {
 };
 
 int main(int argc, const char* argv[]) {
+    ProgramArgs args;
+    parse_arguments(argc, argv, &args);
+
+    // Configuración del Servidor SOCKS
+    print_info("SOCKS Listening on %s:%d", args.socks_addr, args.socks_port);
+    
+    // Configuración del Servidor Management
+    print_info("Management Listening on %s:%d", args.mng_addr, args.mng_port);
+
+    if (args.disectors_enabled) {
+        print_info("[Password Disectors: ENABLED");
+    } else {
+        print_info("Password Disectors: DISABLED");
+    }
+
+    // Registro de usuarios pasados por parámetro (si aplica a tu lógica)
+    for(int i=0; i < args.user_count; i++) {
+        // auth_register_user(args.users[i].name, args.users[i].pass);
+        print_info("User registered: %s:%s", args.users[i].name,args.users[i].pass);
+    }
+
     // Disable buffering on stdout and stderr
     setvbuf(stdout, NULL, _IONBF, 0);
     setvbuf(stderr, NULL, _IONBF, 0);
@@ -37,12 +59,12 @@ int main(int argc, const char* argv[]) {
     // so by using IPv6, we can also handle incoming IPv4 connections ;)
     int serverSocket = socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP);
     if (serverSocket < 0) {
-        perror("[ERR] socket()");
+        print_error("socket()");
         exit(EXIT_FAILURE);
     }
 
     if (selector_fd_set_nio(serverSocket) == -1) {
-        perror("[ERR] selector_fd_set_nio(serverSocket)");
+        print_error("selector_fd_set_nio(serverSocket)");
         exit(EXIT_FAILURE);
     }
 
@@ -50,16 +72,16 @@ int main(int argc, const char* argv[]) {
     struct sockaddr_in6 srcSocket;
     memset((char*)&srcSocket, 0, sizeof(srcSocket));
     srcSocket.sin6_family = AF_INET6;
-    srcSocket.sin6_port = htons(SOURCE_PORT);
+    srcSocket.sin6_port = htons(args.socks_port);
     memcpy(&srcSocket.sin6_addr, &in6addr_any, sizeof(in6addr_any));
 
     if (bind(serverSocket, (struct sockaddr*)&srcSocket, sizeof(srcSocket)) != 0) {
-        perror("[ERR] bind()");
+        print_error("bind()");
         exit(1);
     }
 
     if (listen(serverSocket, MAX_PENDING_CONNECTION_REQUESTS) != 0) {
-        perror("[ERR] listen()");
+        print_error("listen()");
         exit(1);
     }
 
@@ -69,9 +91,9 @@ int main(int argc, const char* argv[]) {
     if (getsockname(serverSocket, (struct sockaddr*)&boundAddress, &boundAddressLen) >= 0) {
         char addrBuffer[128];
         printSocketAddress((struct sockaddr*)&boundAddress, addrBuffer);
-        printf("[INF] Binding to %s\n", addrBuffer);
+        print_info("Binding to %s\n", addrBuffer);
     } else
-        perror("[WRN] Failed to getsockname()");
+        print_error("Failed to getsockname()");
 
 
     // logger initialization
