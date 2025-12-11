@@ -1,44 +1,97 @@
 #include "../../include/metrics.h"
 #include <stdio.h>
-#include <stdatomic.h>
-#include <inttypes.h>
+#include <stdint.h>
+#include <stdlib.h>
 
-static atomic_uint_least64_t total_connections;
-static atomic_uint_least64_t concurrent_connections;
-static atomic_uint_least64_t total_bytes_received;
-static atomic_uint_least64_t total_bytes_sent;
-
-void metrics_init(void) {
-    atomic_store_explicit(&total_connections, 0, memory_order_relaxed);
-    atomic_store_explicit(&concurrent_connections, 0, memory_order_relaxed);
-    atomic_store_explicit(&total_bytes_received, 0, memory_order_relaxed);
-    atomic_store_explicit(&total_bytes_sent, 0, memory_order_relaxed);
+static FILE * read_file(const char * file){
+    FILE * logFile = fopen(file, "r"); //opens the file in read mode
+    if (!logFile) {
+        print_error("[ERR] Couldn't open the log file");
+        return 0;
+    }
+    return logFile;
 }
 
-void metrics_inc_total_connections(void) {
-    atomic_fetch_add_explicit(&total_connections, 1, memory_order_relaxed);
+
+uint64_t metrics_get_total_connections(void) {
+    FILE * f = read_file(ACCESS_FILE);
+
+    uint64_t count = 0;
+    char buffer[1024];
+
+    while (fgets(buffer, sizeof(buffer), f)) {
+        count++;
+    }
+
+    fclose(f);
+    return count;
 }
 
-void metrics_inc_concurrent_connections(void) {
-    atomic_fetch_add_explicit(&concurrent_connections, 1, memory_order_relaxed);
+static uint64_t read_int_from_log_file(char * logFilePath) {
+    FILE * f = read_file(logFilePath);
+    
+    uint64_t value;
+
+    if (fscanf(f, "%llu", &value) != 1) {
+        print_error("[ERR] Couldn't read file");
+        fclose(f);
+        return -1;
+    }
+
+    fclose(f);
+
+    return value;
+
 }
 
-void metrics_dec_concurrent_connections(void) {
-    atomic_fetch_sub_explicit(&concurrent_connections, 1, memory_order_relaxed);
+uint64_t metrics_get_concurrent_connections(void) {
+    return read_int_from_log_file(CONCURRENCIES_FILE);
+
 }
 
-void metrics_add_bytes_received(uint64_t n) {
-    atomic_fetch_add_explicit(&total_bytes_received, n, memory_order_relaxed);
+uint64_t metrics_get_bytes(void) {
+    return read_int_from_log_file(BYTES_FILE);
 }
 
-void metrics_add_bytes_sent(uint64_t n) {
-    atomic_fetch_add_explicit(&total_bytes_sent, n, memory_order_relaxed);
+void metrics_find_user(const char *username) {
+
+    FILE *f = read_file(ACCESS_FILE);
+
+    char line[MAX_LINE];
+
+    while (fgets(line, sizeof(line), f) != NULL) {
+
+        const char *p = strstr(line, "] - ");
+        if (p == NULL) continue;
+
+        p += strlen("] - ");
+
+        char user_in_line[128];
+        int i = 0;
+
+        while (p[i] != ':' &&
+               p[i] != '\0' &&
+               i < (int)sizeof(user_in_line)-1) {
+
+            user_in_line[i] = p[i];
+            i++;
+        }
+        user_in_line[i] = '\0';
+
+        if (strcmp(user_in_line, username) == 0) {
+            printf("%s", line);
+        }
+    }
+
+    fclose(f);
 }
+
+
+
 
 void metrics_print(void) {
     printf("=== Server metrics ===\n");
-    printf("Total connections: %" PRIu64 "\n", (uint64_t)atomic_load_explicit(&total_connections, memory_order_relaxed));
-    printf("Concurrent connections: %" PRIu64 "\n", (uint64_t)atomic_load_explicit(&concurrent_connections, memory_order_relaxed));
-    printf("Total bytes received: %" PRIu64 "\n", (uint64_t)atomic_load_explicit(&total_bytes_received, memory_order_relaxed));
-    printf("Total bytes sent: %" PRIu64 "\n", (uint64_t)atomic_load_explicit(&total_bytes_sent, memory_order_relaxed));
+    printf("Total connections (from log): %llu\n", metrics_get_total_connections());
+    // printf("Concurrent connections: %llu\n", concurrent_connections);
+    // printf("Total bytes received: %llu\n", bytes_transfered);
 }
