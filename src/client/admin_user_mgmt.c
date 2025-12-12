@@ -2,10 +2,45 @@
 #include "../../include/shared.h"
 #include "../../include/api.h"
 #include "../../include/client_utils.h"
+#include "../../include/parser_arguments.h"
 
-#define SERVER_IP   "127.0.0.1"
-#define SERVER_PORT 1080
-#define BUFFER_SIZE 512
+static const ArgParserConfig USER_MGMT_CFG = {
+    .version_str = "Admin User Mgmt Client v1.0",
+    .help_str =
+        "Usage: %s [OPTIONS]\n"
+        "  -l <SOCKS addr>  Dirección del proxy SOCKS (default: 127.0.0.1)\n"
+        "  -p <SOCKS port>  Puerto del proxy SOCKS (default: 1080)\n"
+        "  -L <API host>    Host de la API a conectar via CONNECT (default: ::1)\n"
+        "  -P <API port>    Puerto de la API (default: 8080)\n"
+        "  -h / -v          Ayuda o versión\n",
+
+    .def_socks_addr = LOOPBACK_IPV4,
+    .def_socks_port = 1080,
+
+    .def_aux_addr = LOOPBACK_IPV6,
+    .def_aux_port = ADMIN_API_PORT,
+
+    .enable_aux        = true,
+    .enable_users      = false,
+    .enable_dissectors = false,
+};
+
+static void connect_to_api(int sockfd, const ProgramArgs *args) {
+    struct in_addr  ipv4;
+    struct in6_addr ipv6;
+
+    if (inet_pton(AF_INET, args->aux_addr, &ipv4) == 1) {
+        perform_request_ipv4(sockfd, args->aux_addr, args->aux_port);
+        return;
+    }
+
+    if (inet_pton(AF_INET6, args->aux_addr, &ipv6) == 1) {
+        perform_request_ipv6(sockfd, args->aux_addr, args->aux_port);
+        return;
+    }
+
+    perform_request_domain(sockfd, args->aux_addr, args->aux_port);
+}
 
 /* ==================== Handshake SOCKS5 (tu código) ==================== */
 
@@ -66,38 +101,27 @@ static void admin_quit(int sockfd, uint32_t *id_counter) {
 /* ==================== main ==================== */
 
 int main(int argc, const char *argv[]) {
-    (void)argc;
-    (void)argv;
+    ProgramArgs args;
 
-    int sockfd;
-    struct sockaddr_in serv_addr;
-
-    // 1. Crear socket TCP hacia el proxy
-    if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-        print_error("Failed creating socket");
-        return 1;
+    if (parse_arguments_ex(argc, argv, &args, &USER_MGMT_CFG) < 0) {
+        return EXIT_FAILURE;
+    }
+    if (validate_arguments_ex(&args, &USER_MGMT_CFG) < 0) {
+        args_destroy(&args, &USER_MGMT_CFG);
+        return EXIT_FAILURE;
     }
 
-    serv_addr.sin_family = AF_INET;
-    serv_addr.sin_port   = htons(SERVER_PORT);
-
-    if (inet_pton(AF_INET, SERVER_IP, &serv_addr.sin_addr) <= 0) {
-        print_error("Invalid direction");
-        return 1;
-    }
-
-    // 2. Conectar al servidor SOCKS5
-    print_info("Conectando al Proxy SOCKS5 en %s:%d...\n", SERVER_IP, SERVER_PORT);
-    if (connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
-        print_error("Connection Failed (Is the server running?)");
-        return 1;
+    int sockfd = create_client_socket(args.socks_addr, args.socks_port);
+    if (sockfd < 0) {
+        args_destroy(&args, &USER_MGMT_CFG);
+        return EXIT_FAILURE;
     }
 
     // 3. Handshake + Auth
-    perform_handshake(sockfd,"admin","admin");
+    perform_handshake(sockfd, "admin", "admin");
 
-    // 4. CONNECT a la Admin API: loopback IPv6 + puerto de la API
-    perform_request_ipv6(sockfd, LOOPBACK_IPV6, ADMIN_API_PORT);
+    // 4. CONNECT a la Admin API
+    connect_to_api(sockfd, &args);
 
     // 5. Usar el túnel como cliente de la Admin API
     uint32_t req_id = 1;
@@ -115,5 +139,6 @@ int main(int argc, const char *argv[]) {
     admin_quit(sockfd, &req_id);
 
     close(sockfd);
-    return 0;
+    args_destroy(&args, &USER_MGMT_CFG);
+    return EXIT_SUCCESS;
 }

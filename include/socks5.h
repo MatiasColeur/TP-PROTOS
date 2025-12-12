@@ -41,6 +41,7 @@
 #define CMD 1
 #define SUBNEGOTIATION_VER 1
 
+
 enum socks_reply_status {
     STATUS_SUCCEDED       = 0x00,
     STATUS_GENERAL_SERVER_FAILURE = 0x01,

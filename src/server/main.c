@@ -20,6 +20,40 @@
 #define MAX_PENDING_CONNECTION_REQUESTS 128
 #define MAX_SOCKETS 1024
 
+/* ==================== Server Config ==================== */
+
+static const ArgParserConfig SERVER_CFG = {
+    .version_str = "SOCKS5 Proxy Server v1.0",
+    .help_str =
+        "Usage: %s [OPTIONS]...\n"
+        "\n"
+        "   -h               Imprime la ayuda y termina.\n"
+        "   -l <SOCKS addr>  Dirección donde servirá el proxy SOCKS.\n"
+        "                    Por defecto escucha en todas las interfaces (0.0.0.0).\n"
+        "   -N               Deshabilita los password dissectors.\n"
+        "   -L <MNG addr>    Dirección donde servirá el servicio de management.\n"
+        "                    Por defecto escucha únicamente en loopback (127.0.0.1).\n"
+        "   -p <SOCKS port>  Puerto TCP conexiones entrantes SOCKS.\n"
+        "                    Por defecto el valor es 1080.\n"
+        "   -P <MNG port>    Puerto conexiones entrantes configuración.\n"
+        "                    Por defecto el valor es 8080.\n"
+        "   -u <user:pass>   Declara un usuario del proxy con su contraseña.\n"
+        "                    Se puede utilizar hasta 10 veces.\n"
+        "   -v               Imprime información sobre la versión y termina.\n"
+        "\n",
+
+    .def_socks_addr = "0.0.0.0",
+    .def_socks_port = 1080,
+
+    .def_aux_addr   = "127.0.0.1",
+    .def_aux_port   = 8080,
+
+    .enable_aux        = true,  // -L/-P
+    .enable_users      = true,  // -u
+    .enable_dissectors = true,  // -N
+};
+
+
 /* ==================== Accept handler ==================== */
 
 static void accept_handle_read(struct selector_key *key);
@@ -181,16 +215,28 @@ static void selector_loop(fd_selector selector) {
 
 /* ==================== main ==================== */
 
+
 int main(int argc, const char* argv[]) {
     ProgramArgs args;
-    parse_arguments(argc, argv, &args);
-    socks5_set_management_endpoint(args.mng_addr, (uint16_t)args.mng_port);
+
+    if (parse_arguments_ex(argc, argv, &args, &SERVER_CFG) < 0) {
+        return EXIT_FAILURE;
+    }
+    if (validate_arguments_ex(&args, &SERVER_CFG) < 0) {
+        args_destroy(&args, &SERVER_CFG);
+        return EXIT_FAILURE;
+    }
+
+    socks5_set_management_endpoint(args.aux_addr, (uint16_t) args.aux_port);
 
     setup_stdio_unbuffered();
     print_listening_endpoints(&args);
 
-    int server_fd = create_listen_socket_ipv6_any((uint16_t)args.socks_port);
-    if (server_fd < 0) return EXIT_FAILURE;
+    int server_fd = create_listen_socket_ipv6_any((uint16_t) args.socks_port);
+    if (server_fd < 0) {
+        args_destroy(&args, &SERVER_CFG);
+        return EXIT_FAILURE;
+    }
 
     init_log();
 
@@ -202,10 +248,14 @@ int main(int argc, const char* argv[]) {
 
     maybe_bootstrap_users_async(&args);
 
+    signal(SIGPIPE, SIG_IGN); // Ignore SIGPIPE
+
     selector_loop(selector);
 
     selector_destroy(selector);
     selector_close();
     close(server_fd);
+
+    args_destroy(&args, &SERVER_CFG);
     return EXIT_SUCCESS;
 }

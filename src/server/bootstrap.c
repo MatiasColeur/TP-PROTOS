@@ -158,7 +158,6 @@ void bootstrap_cli_users_via_api(const ProgramArgs *args) {
 
     if (sockfd < 0) {
         print_error("[BOOTSTRAP] socket()");
-        close(sockfd);
         return;
     }
 
@@ -175,7 +174,7 @@ void bootstrap_cli_users_via_api(const ProgramArgs *args) {
     bootstrap_perform_handshake(sockfd);
 
     // CONNECT via SOCKS to Admin API (management addr/port)
-    bootstrap_perform_request(sockfd, args->mng_addr, args->mng_port);
+    bootstrap_perform_request(sockfd, args->aux_addr, args->aux_port);
 
     uint32_t req_id = 1;
 

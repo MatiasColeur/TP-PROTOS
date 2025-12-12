@@ -1,30 +1,54 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <string.h>
 #include <unistd.h>
 #include <errno.h>
 #include <pthread.h>
 #include <stdatomic.h>
+#include <sys/time.h>
 #include <arpa/inet.h>
 #include <netdb.h>
 
-#define SERVER_IP "127.0.0.1"
-#define SERVER_PORT 1080
+#include "../../include/parser_arguments.h"
+
 #define TIMEOUT_SEC 5
+
+static const ArgParserConfig STRESS_CFG = {
+    .version_str = "SOCKS5 Stress Client v1.0",
+    .help_str =
+        "Usage: %s [OPTIONS] <concurrency> [<target_host> <target_port>]\n"
+        "  -l <SOCKS addr>  Dirección del proxy (default: 127.0.0.1)\n"
+        "  -p <SOCKS port>  Puerto del proxy (default: 1080)\n"
+        "  -L <dst host>    Host destino del CONNECT (default: 127.0.0.1)\n"
+        "  -P <dst port>    Puerto destino del CONNECT (default: 80)\n"
+        "  -h / -v          Ayuda o versión\n",
+
+    .def_socks_addr = "127.0.0.1",
+    .def_socks_port = 1080,
+
+    .def_aux_addr = "127.0.0.1",
+    .def_aux_port = 80,
+
+    .enable_aux        = true,  /* -L/-P selects CONNECT target */
+    .enable_users      = false,
+    .enable_dissectors = false,
+};
 
 // Estadísticas Atómicas (Thread-Safe)
 atomic_int success_count = 0;
 atomic_int failure_count = 0;
-atomic_int bytes_transferred = 0;
 
 typedef struct {
     int id;
+    const char *socks_addr;
+    uint16_t socks_port;
     const char *target_host;
     int target_port;
 } thread_arg_t;
 
 // Función auxiliar para conectar TCP
-int connect_tcp() {
+int connect_tcp(const char *socks_addr, uint16_t socks_port) {
     int sockfd;
     struct sockaddr_in serv_addr;
 
@@ -37,8 +61,8 @@ int connect_tcp() {
     setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv);
 
     serv_addr.sin_family = AF_INET;
-    serv_addr.sin_port = htons(SERVER_PORT);
-    if (inet_pton(AF_INET, SERVER_IP, &serv_addr.sin_addr) <= 0) {
+    serv_addr.sin_port = htons(socks_port);
+    if (inet_pton(AF_INET, socks_addr, &serv_addr.sin_addr) <= 0) {
         close(sockfd);
         return -1;
     }
@@ -51,8 +75,10 @@ int connect_tcp() {
 }
 
 // Lógica de un cliente individual (retorna 0 éxito, -1 fallo)
-int run_client_logic(int id, const char *target_host, int target_port) {
-    int sockfd = connect_tcp();
+int run_client_logic(const thread_arg_t *data) {
+    (void)data->id; /* id disponible para debug si se requiere */
+
+    int sockfd = connect_tcp(data->socks_addr, data->socks_port);
     if (sockfd < 0) return -1;
 
     char buf[512];
@@ -80,12 +106,12 @@ int run_client_logic(int id, const char *target_host, int target_port) {
     buf[idx++] = 0x00;
     buf[idx++] = 0x03; // DOMAIN
     
-    int domain_len = strlen(target_host);
+    int domain_len = strlen(data->target_host);
     buf[idx++] = (uint8_t)domain_len;
-    memcpy(&buf[idx], target_host, domain_len);
+    memcpy(&buf[idx], data->target_host, domain_len);
     idx += domain_len;
     
-    uint16_t p = htons(target_port);
+    uint16_t p = htons(data->target_port);
     memcpy(&buf[idx], &p, 2);
     idx += 2;
 
@@ -114,7 +140,7 @@ error:
 void *worker_thread(void *arg) {
     thread_arg_t *data = (thread_arg_t *)arg;
     
-    if (run_client_logic(data->id, data->target_host, data->target_port) == 0) {
+    if (run_client_logic(data) == 0) {
         atomic_fetch_add(&success_count, 1);
         // printf("."); // Feedback visual mínimo (opcional)
     } else {
@@ -128,19 +154,45 @@ void *worker_thread(void *arg) {
 }
 
 int main(int argc, const char *argv[]) {
-    if (argc < 4) {
-        fprintf(stderr, "Uso: %s <concurrency> <target_host> <target_port>\n", argv[0]);
-        fprintf(stderr, "Ejemplo: %s 500 127.0.0.1 9999\n", argv[0]);
-        return 1;
+    ProgramArgs args;
+
+    if (parse_arguments_ex(argc, argv, &args, &STRESS_CFG) < 0) {
+        return EXIT_FAILURE;
     }
 
-    int concurrency = atoi(argv[1]);
-    const char *target_host = argv[2];
-    int target_port = atoi(argv[3]);
+    if (optind >= argc) {
+        fprintf(stderr, "Uso: %s [opciones] <concurrency> [<target_host> <target_port>]\n", argv[0]);
+        args_destroy(&args, &STRESS_CFG);
+        return EXIT_FAILURE;
+    }
+
+    int concurrency = atoi(argv[optind++]);
+    if (concurrency <= 0) {
+        fprintf(stderr, "Concurrency debe ser un entero positivo.\n");
+        args_destroy(&args, &STRESS_CFG);
+        return EXIT_FAILURE;
+    }
+
+    if (optind < argc) {
+        args.aux_addr = argv[optind++];
+    }
+    if (optind < argc) {
+        args.aux_port = (uint16_t) atoi(argv[optind++]);
+    }
+    if (optind < argc) {
+        fprintf(stderr, "Argumentos extra no reconocidos.\n");
+        args_destroy(&args, &STRESS_CFG);
+        return EXIT_FAILURE;
+    }
+
+    if (validate_arguments_ex(&args, &STRESS_CFG) < 0) {
+        args_destroy(&args, &STRESS_CFG);
+        return EXIT_FAILURE;
+    }
 
     printf("=== Iniciando Stress Test SOCKS5 ===\n");
     printf("Usuarios Concurrentes: %d\n", concurrency);
-    printf("Objetivo a través del Proxy: %s:%d\n", target_host, target_port);
+    printf("Objetivo a través del Proxy: %s:%d\n", args.aux_addr, args.aux_port);
     printf("------------------------------------\n");
 
     pthread_t *threads = malloc(sizeof(pthread_t) * concurrency);
@@ -149,8 +201,10 @@ int main(int argc, const char *argv[]) {
     for (int i = 0; i < concurrency; i++) {
         thread_arg_t *arg = malloc(sizeof(thread_arg_t));
         arg->id = i;
-        arg->target_host = target_host;
-        arg->target_port = target_port;
+        arg->socks_addr = args.socks_addr;
+        arg->socks_port = args.socks_port;
+        arg->target_host = args.aux_addr;
+        arg->target_port = args.aux_port;
 
         if (pthread_create(&threads[i], NULL, worker_thread, arg) != 0) {
             perror("Error creando hilo");
@@ -173,5 +227,6 @@ int main(int argc, const char *argv[]) {
     double success_rate = (double)success_count / concurrency * 100.0;
     printf("Tasa de Éxito: %.2f%%\n", success_rate);
 
-    return (failure_count == 0) ? 0 : 1;
+    args_destroy(&args, &STRESS_CFG);
+    return (failure_count == 0) ? EXIT_SUCCESS : EXIT_FAILURE;
 }

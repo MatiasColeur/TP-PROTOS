@@ -103,6 +103,16 @@ struct socks5_connection {
      */
     struct addrinfo *addr_next;
 
+    /**
+     * @brief Destination sockaddr for literal IPv4/IPv6 (ATYP = 0x01 / 0x04).
+     */
+    struct sockaddr_storage dst_addr;
+
+    /**
+     * @brief Length of dst_addr.
+     */
+    socklen_t dst_addr_len;
+
     /** 
      * @brief Non-blocking connect() in progress (EINPROGRESS). 
      */
@@ -531,13 +541,21 @@ static unsigned request_on_read(struct selector_key *key) {
     uint8_t *addr_ptr = ptr + 4;
 
     switch (atyp) {
-        case IPV4_N: // IPv4
+        case IPV4_N: { // IPv4
             addr_len = 4;
-            required_len += addr_len + 2; // +2 from port
+            required_len += addr_len + 2; // +2 port
 
             inet_ntop(AF_INET, addr_ptr, conn->host, sizeof(conn->host));
+
+            struct sockaddr_in *sa = (struct sockaddr_in *)&conn->dst_addr;
+            memset(sa, 0, sizeof(*sa));
+            sa->sin_family = AF_INET;
+            memcpy(&sa->sin_addr, addr_ptr, 4);
+
+            conn->dst_addr_len = sizeof(*sa);
             break;
-        case FQDN_N: // Domain Name
+        }
+        case FQDN_N: {// Domain Name
             if (len < 5) return SOCKS5_REQUEST; 
             addr_len = ptr[4];
             required_len += 1 + addr_len + 2; // 1 (len) + Domain + 2 (port)
@@ -545,12 +563,21 @@ static unsigned request_on_read(struct selector_key *key) {
             memcpy(conn->host, addr_ptr + 1, addr_len);
             conn->host[addr_len] = '\0';
             break;
-        case IPV6_N: // IPv6
+        }
+        case IPV6_N: { // IPv6
             addr_len = 16;
-            required_len += addr_len + 2;
+            required_len += addr_len + 2; // +2 port
+
             inet_ntop(AF_INET6, addr_ptr, conn->host, sizeof(conn->host));
 
+            struct sockaddr_in6 *sa6 = (struct sockaddr_in6 *)&conn->dst_addr;
+            memset(sa6, 0, sizeof(*sa6));
+            sa6->sin6_family = AF_INET6;
+            memcpy(&sa6->sin6_addr, addr_ptr, 16);
+
+            conn->dst_addr_len = sizeof(*sa6);
             break;
+        }
         default:
             log_print_error("ATYP desconocido: %d", atyp);
             return SOCKS5_ERROR;
@@ -559,6 +586,15 @@ static unsigned request_on_read(struct selector_key *key) {
     uint16_t port_n;    //Last two bytes
     memcpy(&port_n, ptr + required_len - 2, 2);
     conn->port = ntohs(port_n); 
+
+    // setear puerto en la sockaddr guardada (solo IPv4/IPv6; FQDN va por getaddrinfo)
+    if (conn->atyp == IPV4_N) {
+        struct sockaddr_in *sa = (struct sockaddr_in *)&conn->dst_addr;
+        sa->sin_port = htons(conn->port);
+    } else if (conn->atyp == IPV6_N) {
+        struct sockaddr_in6 *sa6 = (struct sockaddr_in6 *)&conn->dst_addr;
+        sa6->sin6_port = htons(conn->port);
+    }
 
     buffer_read_adv(b, required_len);
 
@@ -641,40 +677,115 @@ static void connect_on_arrival(const unsigned state, struct selector_key *key) {
     socks5_connection_ptr conn = ATTACHMENT(key);
     (void) state;
 
+    // Bloqueo de acceso a la API de management para no-admin
     if (conn->port == management_port &&
-        strcmp(conn->host, management_host) == 0
-        && conn->role != ROLE_ADMIN) {
+        strcmp(conn->host, management_host) == 0 &&
+        conn->role != ROLE_ADMIN) {
+
         conn->connect_status = STATUS_CONNECTION_NOT_ALLOWED;
-        selector_set_interest_key(key, OP_WRITE);
+
+        // forzar armado + envío de reply
         conn->stm.current = &socks5_states[SOCKS5_REPLY];
         reply_on_arrival(SOCKS5_REPLY, key);
         return;
     }
 
-    // original key will disapear
-    struct selector_key *k = malloc(sizeof(*key));
-    if (k == NULL) {
-        conn->connect_status = STATUS_GENERAL_SERVER_FAILURE; // Error interno
-        selector_set_interest_key(key, OP_WRITE);
-        conn->stm.current = &socks5_states[SOCKS5_REPLY]; // Salto de emergencia
+    // FQDN, thread 
+    if (conn->atyp == FQDN_N) {
+        struct selector_key *k = malloc(sizeof(*k));
+        if (k == NULL) {
+            conn->connect_status = STATUS_GENERAL_SERVER_FAILURE;
+            conn->stm.current = &socks5_states[SOCKS5_REPLY];
+            reply_on_arrival(SOCKS5_REPLY, key);
+            return;
+        }
+        *k = *key;
+
+        pthread_t tid;
+        if (pthread_create(&tid, NULL, resolution_thread, k) != 0) {
+            free(k);
+            conn->connect_status = STATUS_GENERAL_SERVER_FAILURE;
+            conn->stm.current = &socks5_states[SOCKS5_REPLY];
+            reply_on_arrival(SOCKS5_REPLY, key);
+            return;
+        }
+
+        // Pausar el client_fd hasta que el thread haga notify_block()
+        selector_set_interest_key(key, OP_NOOP);
         return;
     }
-    *k = *key;
 
-    pthread_t tid;
-    // new thread
-    if (pthread_create(&tid, NULL, resolution_thread, k) != 0) {
-        log_print_error("Failed creating thread");
-        free(k);
-        conn->connect_status = STATUS_GENERAL_SERVER_FAILURE;
-        // Force reply to report error
-        selector_set_interest_key(key, OP_WRITE);
+    // IPv4/IPv6
+
+    int family = (conn->atyp == IPV4_N) ? AF_INET : AF_INET6;
+
+    int fd = socket(family, SOCK_STREAM, 0);
+    if (fd == -1) {
+        conn->connect_status = errno_to_socks_status(errno);
+        conn->stm.current = &socks5_states[SOCKS5_REPLY];
+        reply_on_arrival(SOCKS5_REPLY, key);
         return;
     }
 
-    // pause socket while finishing thread
-    selector_set_interest_key(key, OP_NOOP);
+    if (selector_fd_set_nio(fd) == -1) {
+        conn->connect_status = errno_to_socks_status(errno);
+        close(fd);
+        conn->stm.current = &socks5_states[SOCKS5_REPLY];
+        reply_on_arrival(SOCKS5_REPLY, key);
+        return;
+    }
+
+    int rc = connect(fd, (struct sockaddr *)&conn->dst_addr, conn->dst_addr_len);
+
+    if (rc == 0) {
+        // conectó inmediato
+        conn->remote_fd = fd;
+        conn->connect_status = SUCCESS;
+
+        selector_status ss = selector_register(key->s, conn->remote_fd, &socks5_handler, OP_NOOP, conn);
+        if (ss != SELECTOR_SUCCESS) {
+            close(conn->remote_fd);
+            conn->remote_fd = -1;
+            conn->connect_status = STATUS_GENERAL_SERVER_FAILURE;
+        }
+
+        conn->stm.current = &socks5_states[SOCKS5_REPLY];
+        reply_on_arrival(SOCKS5_REPLY, key);
+        return;
+    }
+
+    if (rc == -1 && errno == EINPROGRESS) {
+
+            log_print_error("connect() failed immediately: %s", strerror(errno));
+
+        // connect no bloqueante: esperar a que el remote_fd sea write-ready
+        conn->remote_fd = fd;
+        conn->connect_status = SUCCESS; // “optimista”; se confirma en connect_on_write con SO_ERROR
+
+        selector_status ss = selector_register(key->s, conn->remote_fd, &socks5_handler, OP_WRITE, conn);
+        if (ss != SELECTOR_SUCCESS) {
+            close(conn->remote_fd);
+            conn->remote_fd = -1;
+            conn->connect_status = STATUS_GENERAL_SERVER_FAILURE;
+
+            conn->stm.current = &socks5_states[SOCKS5_REPLY];
+            reply_on_arrival(SOCKS5_REPLY, key);
+            return;
+        }
+
+        // No queremos más eventos del client_fd hasta confirmar connect
+        selector_set_interest(key->s, conn->client_fd, OP_NOOP);
+        return;
+    }
+
+    // error real inmediato
+    conn->connect_status = errno_to_socks_status(errno);
+    close(fd);
+
+    conn->stm.current = &socks5_states[SOCKS5_REPLY];
+    reply_on_arrival(SOCKS5_REPLY, key);
 }
+
 
 static unsigned connect_on_block(struct selector_key *key) {
     socks5_connection_ptr conn = ATTACHMENT(key);
@@ -741,6 +852,7 @@ static unsigned connect_on_write(struct selector_key *key) {
         socklen_t len = sizeof(error);
         
         getsockopt(conn->remote_fd, SOL_SOCKET, SO_ERROR, &error, &len);
+log_print_info("SO_ERROR = %d (%s)", error, strerror(error));
 
         if (error == 0) {
             conn->connect_status =SUCCESS; 
