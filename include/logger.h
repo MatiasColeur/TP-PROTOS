@@ -16,7 +16,12 @@
 
 void init_log(void);
 
-void log_access(char * username, char * hostname, int port, int client_port, char * client_ip, int status);
+void log_access(char * username, 
+                char * hostname, 
+                int port, 
+                int client_port, 
+                char * client_ip, 
+                int status);
 
 void log_exit(void);
 

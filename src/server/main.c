@@ -41,18 +41,6 @@ int main(int argc, const char* argv[]) {
     // Configuración del Servidor Management
     print_info("Management Listening on %s:%d", args.mng_addr, args.mng_port);
 
-    if (args.disectors_enabled) {
-        print_info("[Password Disectors: ENABLED");
-    } else {
-        print_info("Password Disectors: DISABLED");
-    }
-
-    // Registro de usuarios pasados por parámetro (si aplica a tu lógica)
-    for(int i=0; i < args.user_count; i++) {
-        // auth_register_user(args.users[i].name, args.users[i].pass);
-        print_info("User registered: %s:%s", args.users[i].name,args.users[i].pass);
-    }
-
     // Disable buffering on stdout and stderr
     setvbuf(stdout, NULL, _IONBF, 0);
     setvbuf(stderr, NULL, _IONBF, 0);

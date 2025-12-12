@@ -29,6 +29,17 @@ inline static FILE * get_file_read(const char * file) {
     return get_file(file, "r");
 }
 
+
+static void current_timestamp_iso8601(char *buf, size_t size) {
+    time_t now = time(NULL);
+    struct tm tm_utc;
+
+    gmtime_r(&now, &tm_utc);
+
+    strftime(buf, size, "%Y-%m-%dT%H:%M:%SZ", &tm_utc);
+}
+
+
 /*---------- LOGGER FUNCTIONS ----------*/
 
 void init_log() {
@@ -55,9 +66,14 @@ void log_access(char * username, char * hostname, int port, int client_port, cha
     FILE * accessFile = get_file_append(ACCESS_FILE);
     FILE * concurrenciesFile = get_file_write(CONCURRENCIES_FILE);
 
-    time_t now = time(NULL);
+    if (accessFile == NULL || concurrenciesFile == NULL) {
+        
+        log_error("Couldn't open access or concurrencies log file");
+        return;
+    }
+
     char timestamp[64];
-    strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", localtime(&now));
+    current_timestamp_iso8601(timestamp, sizeof(timestamp));
 
     fprintf(accessFile, "%s\t%s\tA\t%s\t%d\t%s\t%d\t%d\n", 
         timestamp, 

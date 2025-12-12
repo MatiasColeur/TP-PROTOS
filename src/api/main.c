@@ -390,28 +390,22 @@ static void process_user_connections_request(struct admin_connection *conn) {
 
     while (fgets(line, sizeof(line), f) != NULL) {
 
-        const char *p = strstr(line, "] - ");
-        if (p == NULL) {
-            continue;
-        }
-        p += strlen("] - ");
+        // timestamp \t username \t A \t src_ip \t src_port \t dst_ip \t dst_port \t status
+        char line_copy[MAX_LINE];
+        strncpy(line_copy, line, sizeof(line_copy) - 1);
+        line_copy[sizeof(line_copy) - 1] = '\0';
 
-        char user_in_line[128];
-        int i = 0;
-        while (p[i] != ':' &&
-               p[i] != '\0' &&
-               i < (int)sizeof(user_in_line) - 1) {
-
-            user_in_line[i] = p[i];
-            i++;
-        }
-        user_in_line[i] = '\0';
-
-        if (strcmp(user_in_line, username) != 0) {
+        char *saveptr = NULL;
+        char *token = strtok_r(line_copy, "\t", &saveptr); // timestamp
+        token = strtok_r(NULL, "\t", &saveptr);            // username
+        if (token == NULL) {
             continue;
         }
 
-        // Matcheó el usuario → agregamos esta línea al buffer
+        if (strcmp(token, username) != 0) {
+            continue;
+        }
+
         size_t line_len = strlen(line);
 
         if (buf_len + line_len > buf_cap) {
@@ -448,7 +442,7 @@ static void process_user_connections_request(struct admin_connection *conn) {
     conn->resp_h.len    = htons((uint16_t)buf_len);
 
     conn->resp_body_len = (uint16_t)buf_len;
-    conn->resp_body     = buffer;  // se libera en el caller después de send_response()
+    conn->resp_body     = buffer; 
 }
 
 /* ----------- Dispatcher ----------- */
