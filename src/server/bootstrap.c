@@ -128,8 +128,13 @@ static void bootstrap_admin_quit(int sockfd, uint32_t *id_counter) {
  * IMPORTANT: assumes admin/admin already exists on the server.
  */
 void bootstrap_cli_users_via_api(const ProgramArgs *args) {
-    if (args->user_count == 0) {
-        return;
+    if (args->user_count == 0) return;
+
+    const char *host = args->socks_addr;
+
+    // Si viene un bind-any, como cliente conectamos a loopback
+    if (host == NULL || strcmp(host, "0.0.0.0") == 0 || strcmp(host, "::") == 0) {
+        host = "::1";
     }
 
     int sockfd;
@@ -137,22 +142,21 @@ void bootstrap_cli_users_via_api(const ProgramArgs *args) {
     socklen_t serv_len = 0;
 
     memset(&serv_addr, 0, sizeof(serv_addr));
-    // Try IPv6 first, then IPv4
     struct sockaddr_in6 *addr6 = (struct sockaddr_in6 *)&serv_addr;
-    struct sockaddr_in  *addr4 = (struct sockaddr_in *)&serv_addr;
+    struct sockaddr_in  *addr4 = (struct sockaddr_in  *)&serv_addr;
 
-    if (inet_pton(AF_INET6, args->socks_addr, &addr6->sin6_addr) == 1) {
+    if (inet_pton(AF_INET6, host, &addr6->sin6_addr) == 1) {
         addr6->sin6_family = AF_INET6;
         addr6->sin6_port   = htons(args->socks_port);
-        serv_len = sizeof(struct sockaddr_in6);
+        serv_len = sizeof(*addr6);
         sockfd = socket(AF_INET6, SOCK_STREAM, 0);
-    } else if (inet_pton(AF_INET, args->socks_addr, &addr4->sin_addr) == 1) {
+    } else if (inet_pton(AF_INET, host, &addr4->sin_addr) == 1) {
         addr4->sin_family = AF_INET;
         addr4->sin_port   = htons(args->socks_port);
-        serv_len = sizeof(struct sockaddr_in);
+        serv_len = sizeof(*addr4);
         sockfd = socket(AF_INET, SOCK_STREAM, 0);
     } else {
-        print_error("[BOOTSTRAP] invalid address %s", args->socks_addr);
+        print_error("[BOOTSTRAP] invalid address %s", host);
         return;
     }
 
@@ -161,11 +165,10 @@ void bootstrap_cli_users_via_api(const ProgramArgs *args) {
         return;
     }
 
-    print_info("[BOOTSTRAP] Connecting to SOCKS5 in %s:%d...\n",
-               args->socks_addr, args->socks_port);
+    print_info("[BOOTSTRAP] Connecting to SOCKS5 in %s:%d...\n", host, args->socks_port);
 
     if (connect(sockfd, (struct sockaddr *)&serv_addr, serv_len) < 0) {
-        print_error("[BOOTSTRAP] connect() failed, check if api is running");
+        print_error("[BOOTSTRAP] connect() failed");
         close(sockfd);
         return;
     }

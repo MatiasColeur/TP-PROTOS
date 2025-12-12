@@ -16,8 +16,33 @@
 #include "../../include/api.h"
 #include "../../include/socks5.h"
 #include "../../include/auth.h"
+#include "../../include/parser_arguments.h"
+#include "../../include/util.h"
 
 #define BACKLOG        5
+
+/* ----------- Parsing argumentos -----------*/
+
+static const ArgParserConfig API_CFG = {
+    .version_str = "Admin API v1.0",
+    .help_str =
+        "Usage: %s [OPTIONS]\n"
+        "  -l <addr>   Dirección donde escucha la Admin API (default: ::1)\n"
+        "  -p <port>   Puerto donde escucha la Admin API (default: 8080)\n"
+        "  -h / -v     Ayuda o versión\n",
+
+    .def_socks_addr = LOOPBACK_IPV6,   // usamos socks_addr como "bind addr" de la API
+    .def_socks_port = ADMIN_API_PORT,  // usamos socks_port como "bind port" de la API
+
+    .def_aux_addr = NULL,
+    .def_aux_port = 0,
+
+    .enable_aux        = false,
+    .enable_users      = false,
+    .enable_dissectors = false,
+};
+
+
 
 /* ----------- Protocolo ----------- */
 
@@ -480,7 +505,47 @@ static void process_request(struct admin_connection *conn) {
 
 /* ----------- Socket pasivo ----------- */
 
-static int create_server_socket(uint16_t port) {
+static void sockaddr_to_string(const struct sockaddr *sa, char *out, size_t outlen) {
+    if (out == NULL || outlen == 0) return;
+
+    char ip[INET6_ADDRSTRLEN];
+    uint16_t port = 0;
+
+    if (sa->sa_family == AF_INET) {
+        const struct sockaddr_in *a = (const struct sockaddr_in *)sa;
+        inet_ntop(AF_INET, &a->sin_addr, ip, sizeof(ip));
+        port = ntohs(a->sin_port);
+        snprintf(out, outlen, "%s:%u", ip, port);
+        return;
+    }
+
+    if (sa->sa_family == AF_INET6) {
+        const struct sockaddr_in6 *a6 = (const struct sockaddr_in6 *)sa;
+        inet_ntop(AF_INET6, &a6->sin6_addr, ip, sizeof(ip));
+        port = ntohs(a6->sin6_port);
+        snprintf(out, outlen, "[%s]:%u", ip, port);
+        return;
+    }
+
+    snprintf(out, outlen, "<unknown family %d>", sa->sa_family);
+}
+
+static void print_bound_endpoint(int fd) {
+    struct sockaddr_storage ss;
+    socklen_t slen = sizeof(ss);
+
+    if (getsockname(fd, (struct sockaddr *)&ss, &slen) != 0) {
+        perror("getsockname");
+        return;
+    }
+
+    char buf[128];
+    sockaddr_to_string((struct sockaddr *)&ss, buf, sizeof(buf));
+    printf("[INF] Admin API listening on %s\n", buf);
+}
+
+
+static int create_server_socket(const char *listen_addr, uint16_t port) {
     int fd = socket(AF_INET6, SOCK_STREAM, 0);
     if (fd < 0) {
         perror("socket");
@@ -498,7 +563,26 @@ static int create_server_socket(uint16_t port) {
     memset(&addr, 0, sizeof(addr));
     addr.sin6_family = AF_INET6;
     addr.sin6_port   = htons(port);
-    addr.sin6_addr   = in6addr_loopback; // ::1
+
+    // 1) Intentar IPv6 literal
+    if (inet_pton(AF_INET6, listen_addr, &addr.sin6_addr) == 1) {
+        // ok
+    }
+    // 2) Intentar IPv4 literal -> lo convertimos a IPv4-mapped ::ffff:a.b.c.d
+    else {
+        struct in_addr v4;
+        if (inet_pton(AF_INET, listen_addr, &v4) == 1) {
+            // ::ffff:a.b.c.d
+            addr.sin6_addr = in6addr_any;
+            addr.sin6_addr.s6_addr[10] = 0xff;
+            addr.sin6_addr.s6_addr[11] = 0xff;
+            memcpy(&addr.sin6_addr.s6_addr[12], &v4, 4);
+        } else {
+            fprintf(stderr, "[ERR] Invalid listen address: %s\n", listen_addr);
+            close(fd);
+            exit(EXIT_FAILURE);
+        }
+    }
 
     if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
         perror("bind");
@@ -511,10 +595,12 @@ static int create_server_socket(uint16_t port) {
         close(fd);
         exit(EXIT_FAILURE);
     }
+    
+    print_bound_endpoint(fd);
 
-    printf("[INF] Admin API listening on [::1]:%u\n", port);
     return fd;
 }
+
 
 /* ----------- Manejo de un admin ----------- */
 
@@ -566,26 +652,34 @@ static void handle_admin_client(int client_fd) {
 /* ----------- main ----------- */
 
 int main(int argc, const char *argv[]) {
-    (void)argc;
-    (void)argv;
-
     signal(SIGPIPE, SIG_IGN);
+
+    ProgramArgs args;
+    if (parse_arguments_ex(argc, argv, &args, &API_CFG) < 0) {
+        return EXIT_FAILURE;
+    }
+    if (validate_arguments_ex(&args, &API_CFG) < 0) {
+        args_destroy(&args, &API_CFG);
+        return EXIT_FAILURE;
+    }
 
     if (!user_store_load(USER_DB_PATH)) {
         fprintf(stderr, "[ERR] Failed to load user database from %s: %s\n",
                 USER_DB_PATH, strerror(errno));
-        exit(EXIT_FAILURE);
+        args_destroy(&args, &API_CFG);
+        return EXIT_FAILURE;
     }
 
-    int server_fd = create_server_socket(ADMIN_API_PORT);
+    const char *listen_addr = args.socks_addr;
+    uint16_t listen_port     = args.socks_port;
+
+    int server_fd = create_server_socket(listen_addr, listen_port);
 
     for (;;) {
         struct sockaddr_storage client_addr;
         socklen_t client_len = sizeof(client_addr);
 
-        int client = accept(server_fd,
-                            (struct sockaddr *)&client_addr,
-                            &client_len);
+        int client = accept(server_fd, (struct sockaddr *)&client_addr, &client_len);
         if (client < 0) {
             perror("accept");
             continue;
@@ -600,5 +694,6 @@ int main(int argc, const char *argv[]) {
     }
 
     close(server_fd);
+    args_destroy(&args, &API_CFG);
     return 0;
 }

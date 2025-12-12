@@ -32,7 +32,7 @@ static const ArgParserConfig SERVER_CFG = {
         "                    Por defecto escucha en todas las interfaces (0.0.0.0).\n"
         "   -N               Deshabilita los password dissectors.\n"
         "   -L <MNG addr>    Dirección donde servirá el servicio de management.\n"
-        "                    Por defecto escucha únicamente en loopback (127.0.0.1).\n"
+        "                    Por defecto escucha únicamente en loopback (::1).\n"
         "   -p <SOCKS port>  Puerto TCP conexiones entrantes SOCKS.\n"
         "                    Por defecto el valor es 1080.\n"
         "   -P <MNG port>    Puerto conexiones entrantes configuración.\n"
@@ -45,7 +45,7 @@ static const ArgParserConfig SERVER_CFG = {
     .def_socks_addr = "0.0.0.0",
     .def_socks_port = 1080,
 
-    .def_aux_addr   = "127.0.0.1",
+    .def_aux_addr   = "::1",
     .def_aux_port   = 8080,
 
     .enable_aux        = true,  // -L/-P
