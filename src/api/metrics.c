@@ -74,7 +74,7 @@ void metrics_find_user(const char *username) {
         copy[sizeof(copy)-1] = '\0';   // <-- FIX importante
 
         // parseo por TAB
-        char *field1 = strtok(copy, "\t");  // timestamp
+        strtok(copy, "\t");  // timestamp
         char *field2 = strtok(NULL, "\t");  // username  <---- IMPORTANTE
 
         if (field2 == NULL)

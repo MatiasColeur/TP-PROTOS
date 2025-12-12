@@ -19,7 +19,7 @@ atomic_int bytes_transferred = 0;
 
 typedef struct {
     int id;
-    char *target_host;
+    const char *target_host;
     int target_port;
 } thread_arg_t;
 
@@ -135,7 +135,7 @@ int main(int argc, const char *argv[]) {
     }
 
     int concurrency = atoi(argv[1]);
-    char *target_host = argv[2];
+    const char *target_host = argv[2];
     int target_port = atoi(argv[3]);
 
     printf("=== Iniciando Stress Test SOCKS5 ===\n");
