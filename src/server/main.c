@@ -72,7 +72,7 @@ static void setup_stdio_unbuffered(void) {
 
 static void print_listening_endpoints(const ProgramArgs *args) {
     print_info("SOCKS Listening on %s:%d", args->socks_addr, args->socks_port);
-    print_info("Management Listening on %s:%d", args->mng_addr, args->mng_port);
+    print_info("Management API will be reached at %s:%d when required", args->aux_addr, args->aux_port);
 }
 
 static int create_listen_socket_ipv6_any(const uint16_t port) {
