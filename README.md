@@ -80,17 +80,24 @@ $ make clean all
 
 ## Ejecución y clientes de prueba
 
-Todos los binarios soportan `-h` para ver opciones completas.
+Todos los binarios soportan `-h` para ver opciones completas y valores por defecto.
 
 ---
 
 ### 1) Admin API
 
-**Previo a ejecutar el server**
+> **Debe ejecutarse antes del servidor SOCKS5**
+
+**Genérico**
 
 ```bash
 ./bin/api [OPTIONS]
 ```
+
+**Opciones principales**
+
+* `-l <addr>` Dirección donde escucha la API (default: `::1`)
+* `-p <port>` Puerto de la API (default: `8080`)
 
 **Ejemplos**
 
@@ -104,10 +111,21 @@ Todos los binarios soportan `-h` para ver opciones completas.
 
 ### 2) Servidor SOCKS5
 
+**Genérico**
 
 ```bash
 ./bin/socks5 [OPTIONS]
 ```
+
+**Opciones principales**
+
+* `-l <SOCKS addr>` Dirección donde escucha el proxy
+* `-p <SOCKS port>` Puerto del proxy
+* `-L <MNG addr>` Dirección de la API de management
+* `-P <MNG port>` Puerto de la API
+* `-u <user:pass>` Usuarios iniciales
+* `-N` Deshabilita dissectors
+* `-v` Versión
 
 **Ejemplos**
 
@@ -121,47 +139,78 @@ Todos los binarios soportan `-h` para ver opciones completas.
 
 ## Clientes SOCKS5 (smoke tests)
 
+Clientes simples para validar handshake, auth y CONNECT.
+
+---
+
 ### Cliente IPv4
 
+**Genérico**
 
 ```bash
 ./bin/client_ipv4 [OPTIONS]
 ```
 
+**Opciones**
+
+* `-l <SOCKS addr>` (default: `127.0.0.1`)
+* `-p <SOCKS port>` (default: `1080`)
+* `-L <dst IPv4>` (default: `142.250.190.14`)
+* `-P <dst port>` (default: `80`)
+
 **Ejemplo**
 
 ```bash
-./bin/client_ipv4 -l 127.0.0.1 -p 1080
+./bin/client_ipv4
+./bin/client_ipv4 -L 142.250.190.14 -P 80
 ```
 
 ---
 
 ### Cliente IPv6
 
+**Genérico**
 
 ```bash
 ./bin/client_ipv6 [OPTIONS]
 ```
 
+**Opciones**
+
+* `-l <SOCKS addr>`
+* `-p <SOCKS port>`
+* `-L <dst IPv6>` (default: `2606:4700:4700::1111`)
+* `-P <dst port>`
+
 **Ejemplo**
 
 ```bash
-./bin/client_ipv6 -l ::1 -p 1080
+./bin/client_ipv6
+./bin/client_ipv6 -L 2606:4700:4700::1111 -P 80
 ```
 
 ---
 
 ### Cliente DNS (FQDN)
 
+**Genérico**
 
 ```bash
 ./bin/client_dns [OPTIONS]
 ```
 
+**Opciones**
+
+* `-l <SOCKS addr>`
+* `-p <SOCKS port>`
+* `-L <dest host>` (default: `google.com`)
+* `-P <dest port>` (default: `80`)
+
 **Ejemplo**
 
 ```bash
-./bin/client_dns -l 127.0.0.1 -p 1080
+./bin/client_dns
+./bin/client_dns -L google.com -P 80
 ```
 
 ---
@@ -170,18 +219,25 @@ Todos los binarios soportan `-h` para ver opciones completas.
 
 ### Cliente de métricas (vía SOCKS → API)
 
+**Genérico**
+
 ```bash
-./bin/admin_metrics [OPCION] [usuario]
+./bin/admin_metrics [OPTIONS]
 ```
+
+**Opciones**
+
+* `-H` Conexiones históricas
+* `-C` Conexiones concurrentes
+* `-B` Bytes transferidos
+* `-U <user>` Logs/conexiones de un usuario
 
 **Ejemplos**
 
 ```bash
-./bin/admin_metrics
-./bin/admin_metrics concurrent
-./bin/admin_metrics historical
-./bin/admin_metrics bytes
-./bin/admin_metrics user admin
+./bin/admin_metrics -H
+./bin/admin_metrics -C -B
+./bin/admin_metrics -U admin
 ```
 
 ---
@@ -190,20 +246,27 @@ Todos los binarios soportan `-h` para ver opciones completas.
 
 ### Cliente de gestión de usuarios
 
+**Genérico**
 
 ```bash
-./bin/admin_user_mgmt <accion> [args]
+./bin/admin_user_mgmt ACTION
 ```
+
+**Acciones**
+
+* `-A <user> <pass> <role>` Agregar usuario
+* `-R <user> <role>` Cambiar rol
+* `-D <user>` Eliminar usuario
 
 **Ejemplos**
 
 ```bash
-./bin/admin_user_mgmt add pepito 1234 user
-./bin/admin_user_mgmt role juan admin
-./bin/admin_user_mgmt del messi
+./bin/admin_user_mgmt -A pepito 1234 user
+./bin/admin_user_mgmt -R juan admin
+./bin/admin_user_mgmt -D messi
 ```
 
-Estos cambios se aplican **sin reiniciar** el servidor SOCKS5.
+Los cambios se aplican **sin reiniciar** el servidor SOCKS5.
 
 ---
 
@@ -211,7 +274,9 @@ Estos cambios se aplican **sin reiniciar** el servidor SOCKS5.
 
 ### Stress de concurrencia
 
-Prueba cantidad máxima de conexiones simultáneas.
+Evalúa la cantidad máxima de conexiones simultáneas.
+
+**Genérico**
 
 ```bash
 ./bin/stress_concurrencies [OPTIONS] <concurrency>
@@ -220,14 +285,15 @@ Prueba cantidad máxima de conexiones simultáneas.
 **Ejemplo**
 
 ```bash
-./bin/stress_concurrencies -l 127.0.0.1 -p 1080 -L 127.0.0.1 -P 80 500
+./bin/stress_concurrencies 500
+./bin/stress_concurrencies -L 127.0.0.1 -P 80 500
 ```
 
 ---
 
 ### Stress de throughput
 
-Prueba transferencia sostenida a través del túnel SOCKS5.
+Evalúa transferencia sostenida de datos a través del túnel SOCKS5.
 
 **Preparación (eco local)**
 
@@ -235,24 +301,27 @@ Prueba transferencia sostenida a través del túnel SOCKS5.
 socat TCP-LISTEN:9090,reuseaddr,fork SYSTEM:'cat'
 ```
 
+**Genérico**
+
 ```bash
-./bin/stress_throughput [OPTIONS] <concurrency> <duration_sec> <payload_bytes>
+./bin/stress_throughput [OPTIONS] <concurrency> <duration_sec> [payload_bytes]
 ```
 
 **Ejemplo**
 
 ```bash
-./bin/stress_throughput -l 127.0.0.1 -p 1080 -L 127.0.0.1 -P 9090 100 10 16384
+./bin/stress_throughput 100 10
+./bin/stress_throughput -L 127.0.0.1 -P 9090 100 10 16384
 ```
 
 ---
 
-## Ejemplo Flujo completo (end-to-end)
+## Ejemplo de flujo completo (end-to-end)
 
 ```bash
 ./bin/api
 ./bin/socks5
 ./bin/client_ipv4
-./bin/admin_metrics
-./bin/admin_user_mgmt add pepito 1234 user
+./bin/admin_metrics -H -C
+./bin/admin_user_mgmt -A pepito 1234 user
 ```
