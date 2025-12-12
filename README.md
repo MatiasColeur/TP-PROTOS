@@ -16,9 +16,28 @@ El servidor soporta:
 
 ---
 
+## Cómo está organizado el repo
+
+```
+.
+├── README.md                # Este archivo
+├── include/                 # Headers compartidos por server/API/clients
+├── src/
+│   ├── server/              # Lógica del SOCKS5 y su estado
+│   ├── api/                 # API de admin/metrics que expone el TP
+│   ├── client/              # Clientes de prueba (ipv4/ipv6/dns, admin, stress)
+│   └── shared/              # Utilidades comunes (parsers, buffers, logs, etc.)
+├── bin/                     # Binarios generados por make
+├── obj/                     # Objetos intermedios
+├── log/                     # Logs (ej: bytes transferidos)
+└── users.csv                # Usuarios base de la API (admin, etc.)
+```
+
+---
+
 ## Requisitos previos IMPORTANTES
 
-### 1. Tener la **API corriendo antes de iniciar el servidor SOCKS5**
+### 1. La **API debe estar corriendo antes de iniciar el servidor SOCKS5**
 
 La API es el módulo de configuración/monitoreo del sistema.
 El servidor se comunica con ella para:
@@ -37,13 +56,12 @@ admin,fb001dfcffd1c899f3297871406242f097aecf1a5342ccf3ebcd116146188e4b
 ```
 
 (user:admin, pass:admin)
-Sin este archivo, la API no podrá levantar correctamente la base de usuarios.
+Sin este archivo, la API no podrá levantar correctamente la base de usuarios. No se debe modificar el archivo `users.csv` durante la ejecución de la api ya que esta tiene una copia en memoria.
 
 ---
 
 ## Dependencias
 
-Asegurate de tener instalado:
 
 * **gcc**
 * **make**
@@ -58,99 +76,183 @@ Asegurate de tener instalado:
 $ make clean all
 ```
 
-Esto compila los tres componentes:
+---
 
-* `bin/socks5` → servidor SOCKS5
-* `bin/client` → cliente de prueba
-* `bin/api` → servidor de administración/monitoreo
+## Ejecución y clientes de prueba
+
+Todos los binarios soportan `-h` para ver opciones completas.
 
 ---
 
-## Ejecución
+### 1) Admin API
 
-### 1. Levantar la API **primero**
+**Previo a ejecutar el server**
 
 ```bash
-$ ./bin/api
+./bin/api [OPTIONS]
 ```
 
-### 2. Ejecutar el servidor SOCKS5
+**Ejemplos**
 
 ```bash
-$ ./bin/socks5
+./bin/api
+./bin/api -l ::1 -p 8080
+./bin/api -l :: -p 8080
 ```
 
-El servidor queda listo para aceptar múltiples clientes concurrentes y autenticarlos mediante la API.
 ---
 
-## Clientes de prueba incluidos
+### 2) Servidor SOCKS5
 
-El proyecto incluye distintos **clientes de prueba** que permiten validar de forma aislada y end-to-end las funcionalidades requeridas por el enunciado: handshake SOCKS5, autenticación, forwarding, administración en tiempo de ejecución, métricas y concurrencia.
 
-### `./bin/client`
+```bash
+./bin/socks5 [OPTIONS]
+```
 
-Cliente SOCKS5 básico para **smoke testing end-to-end**.
+**Ejemplos**
 
-* Realiza el **handshake SOCKS5 completo** con autenticación usuario/contraseña.
-* Credenciales por defecto: `admin / admin`.
-* Destino por defecto: `127.0.0.1:1080` (modificable con flags `-l` y `-p`).
-* Permite elegir el tipo de destino (**IPv4 / IPv6 / dominio**) modificando en
-  `src/client/client.c` la función `perform_request_*`.
-* La función `test_tunnel()` envía un **GET HTTP real** a través del proxy para verificar
-  el correcto funcionamiento del túnel bidireccional.
-
-Sirve para validar que el proxy funciona de punta a punta.
+```bash
+./bin/socks5
+./bin/socks5 -L ::1 -P 8080
+./bin/socks5 -l ::1 -p 1080 -L ::1 -P 8080 -u maxi:chiate
+```
 
 ---
 
-### `./bin/admin_metrics [usuario_para_logs]`
+## Clientes SOCKS5 (smoke tests)
 
-Cliente de **monitoreo y métricas**.
+### Cliente IPv4
 
-* Conecta al proxy SOCKS5 y realiza un **CONNECT hacia la API** (`::1:ADMIN_PORT`).
-* Consulta métricas:
 
-  * conexiones históricas,
-  * conexiones concurrentes,
-  * bytes transferidos,
-  * líneas de log asociadas a un usuario.
-* El usuario para filtrar logs puede pasarse por parámetro (por defecto: `admin`).
-* Finaliza enviando el comando `QUIT`.
+```bash
+./bin/client_ipv4 [OPTIONS]
+```
 
-Valida el **pipeline SOCKS5 → API → métricas**, sin bypassar el proxy.
+**Ejemplo**
 
----
-
-### `./bin/admin_user_mgmt`
-
-Cliente de **administración de usuarios en tiempo de ejecución**.
-
-* Conecta al proxy y realiza un **CONNECT hacia la API**.
-* Ejecuta comandos de administración de prueba:
-
-  * `ADD_USER`
-  * `SET_USER_ROLE`
-  * `DELETE_USER`
-  * `QUIT`
-* Usa datos hardcodeados de demostración (ej: `pepito/1234`, `juan → admin`, `messi`).
-
-Verifica que los **cambios de usuarios se aplican sin reiniciar el servidor**, como exige el enunciado.
+```bash
+./bin/client_ipv4 -l 127.0.0.1 -p 1080
+```
 
 ---
 
-### `./bin/stress <concurrency> <target_host> <target_port>`
+### Cliente IPv6
 
-Cliente de **carga y concurrencia**.
 
-* Lanza **N hilos concurrentes**, cada uno realizando:
+```bash
+./bin/client_ipv6 [OPTIONS]
+```
 
-  * handshake SOCKS5,
-  * autenticación (`admin/admin`),
-  * `CONNECT` al destino indicado.
-* Reporta:
+**Ejemplo**
 
-  * conexiones exitosas,
-  * fallos,
-  * tasa de éxito.
+```bash
+./bin/client_ipv6 -l ::1 -p 1080
+```
 
-Útil para evaluar **estabilidad, concurrencia y comportamiento bajo carga**.
+---
+
+### Cliente DNS (FQDN)
+
+
+```bash
+./bin/client_dns [OPTIONS]
+```
+
+**Ejemplo**
+
+```bash
+./bin/client_dns -l 127.0.0.1 -p 1080
+```
+
+---
+
+## Métricas y monitoreo
+
+### Cliente de métricas (vía SOCKS → API)
+
+```bash
+./bin/admin_metrics [OPCION] [usuario]
+```
+
+**Ejemplos**
+
+```bash
+./bin/admin_metrics
+./bin/admin_metrics concurrent
+./bin/admin_metrics historical
+./bin/admin_metrics bytes
+./bin/admin_metrics user admin
+```
+
+---
+
+## Administración de usuarios en tiempo de ejecución
+
+### Cliente de gestión de usuarios
+
+
+```bash
+./bin/admin_user_mgmt <accion> [args]
+```
+
+**Ejemplos**
+
+```bash
+./bin/admin_user_mgmt add pepito 1234 user
+./bin/admin_user_mgmt role juan admin
+./bin/admin_user_mgmt del messi
+```
+
+Estos cambios se aplican **sin reiniciar** el servidor SOCKS5.
+
+---
+
+## Pruebas de carga y performance
+
+### Stress de concurrencia
+
+Prueba cantidad máxima de conexiones simultáneas.
+
+```bash
+./bin/stress_concurrencies [OPTIONS] <concurrency>
+```
+
+**Ejemplo**
+
+```bash
+./bin/stress_concurrencies -l 127.0.0.1 -p 1080 -L 127.0.0.1 -P 80 500
+```
+
+---
+
+### Stress de throughput
+
+Prueba transferencia sostenida a través del túnel SOCKS5.
+
+**Preparación (eco local)**
+
+```bash
+socat TCP-LISTEN:9090,reuseaddr,fork SYSTEM:'cat'
+```
+
+```bash
+./bin/stress_throughput [OPTIONS] <concurrency> <duration_sec> <payload_bytes>
+```
+
+**Ejemplo**
+
+```bash
+./bin/stress_throughput -l 127.0.0.1 -p 1080 -L 127.0.0.1 -P 9090 100 10 16384
+```
+
+---
+
+## Ejemplo Flujo completo (end-to-end)
+
+```bash
+./bin/api
+./bin/socks5
+./bin/client_ipv4
+./bin/admin_metrics
+./bin/admin_user_mgmt add pepito 1234 user
+```
