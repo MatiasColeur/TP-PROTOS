@@ -41,15 +41,6 @@
 #define CMD 1
 #define SUBNEGOTIATION_VER 1
 
-int handleClient(int clientSocket);
-
-int handleAuthNegotiation(int clientSocket, char * clientUsername, char * clientPassword);
-int handleRequest(int clientSocket, struct addrinfo** addressConnectTo, int * clientPort, char * clientHostname);
-int handleConnectAndReply(int clientSocket, struct addrinfo** addressConnectTo, int* remoteSocket);
-int handleConnectionData(int clientSocket, int remoteSocket);
-int handleUsernamePasswordAuth(int clientSocket, char * username, char * password, size_t maxLen);
-bool authenticateUser(int clientSocket);
-
 enum socks_reply_status {
     STATUS_SUCCEDED       = 0x00,
     STATUS_GENERAL_SERVER_FAILURE = 0x01,
@@ -67,7 +58,8 @@ typedef enum {
     ROLE_ADMIN = 0x01,
 } client_role;
 
+void handle_new_client(fd_selector selector, int client_fd);
 void socks5_set_management_endpoint(const char *addr, uint16_t port);
+uint8_t errno_to_socks_status(int err);
 
-static uint8_t errno_to_socks_status(int err);
 #endif

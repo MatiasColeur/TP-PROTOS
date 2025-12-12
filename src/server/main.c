@@ -9,7 +9,6 @@
 #include <unistd.h>
 #include <signal.h>
 
-#include "../../include/echo.h"
 #include "../../include/util.h"
 #include "../../include/selector.h"
 #include "../../include/logger.h"

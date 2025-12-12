@@ -1128,7 +1128,7 @@ socks5_kill_connection(socks5_connection_ptr conn) {
     }
 }
 
-static uint8_t errno_to_socks_status(int err) {
+uint8_t errno_to_socks_status(int err) {
     switch (err) {
         case 0: return STATUS_SUCCEDED;
         case ECONNREFUSED: return STATUS_CONNECTION_REFUSED;
