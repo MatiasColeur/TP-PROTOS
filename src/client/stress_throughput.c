@@ -351,7 +351,7 @@ int main(int argc, const char *argv[]) {
 
     // esperar que "todos" pasen por ready (aunque fallen)
     while (atomic_load(&ready_cnt) < concurrency) {
-        usleep(1000);
+        sleep(1000);
         // opcional: timeout
         if (now_ms() - t0 > 30000) break;
     }
