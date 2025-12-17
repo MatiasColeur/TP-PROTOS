@@ -17,7 +17,7 @@ uint64_t metrics_get_concurrent_connections(void);
 
 uint64_t metrics_get_bytes(void);
 
-void metrics_find_user(const char * username);
+int metrics_find_user(const char *username, uint8_t **out_buf, size_t *out_len, uint64_t *out_matches);
 
 
 #endif

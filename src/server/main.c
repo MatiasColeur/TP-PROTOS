@@ -128,6 +128,9 @@ static int create_listen_socket_ipv6_any(const uint16_t port) {
     srcSocket.sin6_port   = htons(port);
     memcpy(&srcSocket.sin6_addr, &in6addr_any, sizeof(in6addr_any));
 
+    int one = 1;
+    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+
     if (bind(fd, (struct sockaddr*)&srcSocket, sizeof(srcSocket)) != 0) {
         print_error("bind()");
         close(fd);

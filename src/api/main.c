@@ -380,81 +380,26 @@ static void process_user_mgmt_request(struct admin_connection *conn) {
  * ADMIN_GET_USER_CONNECTIONS: por ahora stub
  */
 static void process_user_connections_request(struct admin_connection *conn) {
+
     if (conn->req_body == NULL || conn->req_body_len == 0) {
         admin_prepare_error(conn, 1, "missing_body");
         return;
     }
 
-    char *body = malloc(conn->req_body_len + 1);
-    if (body == NULL) {
-        admin_prepare_error(conn, 1, "no_memory");
-        return;
-    }
-    memcpy(body, conn->req_body, conn->req_body_len);
-    body[conn->req_body_len] = '\0';
-
     char username[128] = {0};
-    if (sscanf(body, "%127s", username) != 1) {
+    if (sscanf((char *)conn->req_body, "%127s", username) != 1) {
         admin_prepare_error(conn, 1, "bad_format");
-        free(body);
         return;
     }
-    free(body);
 
-    FILE *f = fopen(ACCESS_FILE, "r");
-    if (f == NULL) {
+    uint8_t *buffer = NULL;
+    size_t buf_len = 0;
+    uint64_t matches = 0;
+
+    if (metrics_find_user(username, &buffer, &buf_len, &matches) != 0) {
         admin_prepare_error(conn, 1, "log_open_failed");
         return;
     }
-
-    char line[MAX_LINE];
-    uint8_t *buffer = NULL;
-    size_t buf_len  = 0;
-    size_t buf_cap  = 0;
-    uint64_t matches = 0;
-
-    while (fgets(line, sizeof(line), f) != NULL) {
-
-        // timestamp \t username \t A \t src_ip \t src_port \t dst_ip \t dst_port \t status
-        char line_copy[MAX_LINE];
-        strncpy(line_copy, line, sizeof(line_copy) - 1);
-        line_copy[sizeof(line_copy) - 1] = '\0';
-
-        char *saveptr = NULL;
-        char *token = strtok_r(line_copy, "\t", &saveptr); // timestamp
-        token = strtok_r(NULL, "\t", &saveptr);            // username
-        if (token == NULL) {
-            continue;
-        }
-
-        if (strcmp(token, username) != 0) {
-            continue;
-        }
-
-        size_t line_len = strlen(line);
-
-        if (buf_len + line_len > buf_cap) {
-            size_t new_cap = buf_cap == 0 ? 1024 : buf_cap * 2;
-            while (new_cap < buf_len + line_len) {
-                new_cap *= 2;
-            }
-            uint8_t *tmp = realloc(buffer, new_cap);
-            if (tmp == NULL) {
-                fclose(f);
-                free(buffer);
-                admin_prepare_error(conn, 1, "no_memory");
-                return;
-            }
-            buffer = tmp;
-            buf_cap = new_cap;
-        }
-
-        memcpy(buffer + buf_len, line, line_len);
-        buf_len += line_len;
-        matches++;
-    }
-
-    fclose(f);
 
     if (matches == 0) {
         free(buffer);
@@ -467,8 +412,9 @@ static void process_user_connections_request(struct admin_connection *conn) {
     conn->resp_h.len    = htons((uint16_t)buf_len);
 
     conn->resp_body_len = (uint16_t)buf_len;
-    conn->resp_body     = buffer; 
+    conn->resp_body     = buffer;
 }
+
 
 /* ----------- Dispatcher ----------- */
 

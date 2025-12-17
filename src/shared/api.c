@@ -57,7 +57,7 @@ void admin_send_request(int sockfd,
             exit(1);
         }
         buf[resp_len] = '\0';
-        printf("[ADMIN] Payload: %s", buf);
+        printf("[ADMIN] Payload: \n%s", buf);
         if (buf[resp_len-1] != '\n') {
             printf("\n");
         }

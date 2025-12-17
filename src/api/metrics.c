@@ -57,38 +57,61 @@ uint64_t metrics_get_bytes(void) {
     return read_int_from_log_file(BYTES_FILE);
 }
 
-void metrics_find_user(const char *username) {
-
+int metrics_find_user(const char *username, uint8_t **out_buf, size_t *out_len, uint64_t *out_matches) {
     FILE *f = read_file(ACCESS_FILE);
     if (f == NULL) {
-        perror("Error abriendo access file");
-        return;
+        return -1;
     }
 
     char line[MAX_LINE];
+    uint8_t *buffer = NULL;
+    size_t buf_len = 0;
+    size_t buf_cap = 0;
+    uint64_t matches = 0;
 
     while (fgets(line, sizeof(line), f) != NULL) {
 
         char copy[MAX_LINE];
-        strncpy(copy, line, sizeof(copy));
-        copy[sizeof(copy)-1] = '\0';   // <-- FIX importante
+        strncpy(copy, line, sizeof(copy) - 1);
+        copy[sizeof(copy) - 1] = '\0';
 
-        // parseo por TAB
-        strtok(copy, "\t");  // timestamp
-        char *field2 = strtok(NULL, "\t");  // username  <---- IMPORTANTE
+        char *saveptr = NULL;
+        strtok_r(copy, "\t", &saveptr);        // timestamp
+        char *user = strtok_r(NULL, "\t", &saveptr); // username
 
-        if (field2 == NULL)
+        if (user == NULL)
             continue;
 
-        // remover salto de línea
-        field2[strcspn(field2, "\r\n")] = '\0';
+        if (strcmp(user, username) != 0)
+            continue;
 
-        if (strcmp(field2, username) == 0) {
-            printf("%s", line);
+        size_t line_len = strlen(line);
+
+        if (buf_len + line_len > buf_cap) {
+            size_t new_cap = buf_cap == 0 ? 1024 : buf_cap * 2;
+            while (new_cap < buf_len + line_len)
+                new_cap *= 2;
+
+            uint8_t *tmp = realloc(buffer, new_cap);
+            if (tmp == NULL) {
+                free(buffer);
+                fclose(f);
+                return -1;
+            }
+            buffer = tmp;
+            buf_cap = new_cap;
         }
+
+        memcpy(buffer + buf_len, line, line_len);
+        buf_len += line_len;
+        matches++;
     }
 
     fclose(f);
+
+    *out_buf = buffer;
+    *out_len = buf_len;
+    *out_matches = matches;
+
+    return 0;
 }
-
-
