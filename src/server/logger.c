@@ -42,7 +42,7 @@ static void current_timestamp_iso8601(char *buf, size_t size) {
 
 /*---------- LOGGER FUNCTIONS ----------*/
 
-void init_log() {
+void init_log(void) {
 
     FILE *fr = fopen(BYTES_FILE, "r");
     if (fr != NULL) {
