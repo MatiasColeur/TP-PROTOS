@@ -3,9 +3,9 @@
 #include "../../include/shared.h"
 
 void admin_send_request(int sockfd,
-                               uint32_t id,
-                               uint8_t cmd,
-                               const char *payload) {
+                        uint32_t id,
+                        uint8_t cmd,
+                        const char *payload) {
     struct admin_req_header req;
     struct admin_resp_header resp;
 
@@ -15,17 +15,17 @@ void admin_send_request(int sockfd,
         return;
     }
 
+    /* -------- Envío del request -------- */
+
     req.id  = htonl(id);
     req.cmd = cmd;
     req.len = htons((uint16_t)payload_len);
 
-    // Enviar header
     if (!write_exact(sockfd, &req, sizeof(req))) {
         print_error("Error escribiendo header admin");
         exit(1);
     }
 
-    // Enviar payload, si hay
     if (payload_len > 0) {
         if (!write_exact(sockfd, payload, payload_len)) {
             print_error("Error escribiendo payload admin");
@@ -33,7 +33,8 @@ void admin_send_request(int sockfd,
         }
     }
 
-    // Leer header de respuesta
+    /* -------- Recepción del response -------- */
+
     if (!read_exact(sockfd, &resp, sizeof(resp))) {
         print_error("Error leyendo header de respuesta admin");
         exit(1);
@@ -45,21 +46,31 @@ void admin_send_request(int sockfd,
     printf("[ADMIN] Resp id=%u status=%u len=%u\n",
            resp_id, resp.status, resp_len);
 
-    // Leer payload de respuesta si lo hay
-    if (resp_len > 0) {
-        char buf[512];
-        if (resp_len >= sizeof(buf)) {
-            resp_len = sizeof(buf) - 1;
-        }
+    if (resp_len == 0)
+        return;
 
-        if (!read_exact(sockfd, buf, resp_len)) {
-            print_error("Error leyendo payload de respuesta");
-            exit(1);
-        }
-        buf[resp_len] = '\0';
-        printf("[ADMIN] Payload: \n%s", buf);
-        if (buf[resp_len-1] != '\n') {
-            printf("\n");
-        }
+    /* -------- Leer payload completo -------- */
+
+    uint8_t *buf = malloc(resp_len + 1); // +1 para '\0'
+    if (buf == NULL) {
+        print_error("No memory leyendo payload admin");
+        exit(1);
     }
+
+    if (!read_exact(sockfd, buf, resp_len)) {
+        free(buf);
+        print_error("Error leyendo payload de respuesta admin");
+        exit(1);
+    }
+
+    buf[resp_len] = '\0';
+
+    /* -------- Mostrar -------- */
+
+    printf("[ADMIN] Payload:\n%s", buf);
+    if (resp_len > 0 && buf[resp_len - 1] != '\n') {
+        printf("\n");
+    }
+
+    free(buf);
 }

@@ -387,10 +387,24 @@ static void process_user_connections_request(struct admin_connection *conn) {
     }
 
     char username[128] = {0};
-    if (sscanf((char *)conn->req_body, "%127s", username) != 1) {
+
+    char *body = malloc(conn->req_body_len + 1);
+    if (body == NULL) {
+        admin_prepare_error(conn, 1, "no_memory");
+        return;
+    }
+
+    memcpy(body, conn->req_body, conn->req_body_len);
+    body[conn->req_body_len] = '\0';
+
+    if (sscanf(body, "%127s", username) != 1) {
+        free(body);
         admin_prepare_error(conn, 1, "bad_format");
         return;
     }
+
+    free(body);
+
 
     uint8_t *buffer = NULL;
     size_t buf_len = 0;
