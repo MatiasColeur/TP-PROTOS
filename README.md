@@ -325,3 +325,19 @@ socat TCP-LISTEN:9090,reuseaddr,fork SYSTEM:'cat'
 ./bin/admin_metrics -H -C
 ./bin/admin_user_mgmt -A pepito 1234 user
 ```
+
+## Protocolo de conexion entre API y SERVER
+
+### 1. Diseño del Protocolo (El "Contrato")
+
+**Estructura del Paquete:**
+
+| Byte 0 | Byte 1 | Byte 2-3 | Byte 4 ... N |
+| --- | --- | --- | --- |
+| **Versión** | **CMD (Opcode)** | **Payload Length** | **Payload Data** |
+
+* **Ver:** Versión del protocolo (ej: 1).
+* **CMD:** Qué queremos hacer (ej: 0x01 = Get Metrics, 0x02 = Add User).
+* **Len:** Cuántos bytes de datos vienen después (uint16 big-endian).
+* **Payload:** Los argumentos o la respuesta.
+
