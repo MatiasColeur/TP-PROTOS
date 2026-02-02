@@ -133,12 +133,20 @@ static void admin_prepare_ok_msg(struct admin_connection *conn,
 /* ----------- IO de requests ----------- */
 
 static bool read_request_header(struct admin_connection *conn) {
-    if (!read_exact(conn->fd, &conn->req_h, sizeof(conn->req_h))) {
-        return false; // error o EOF
+    uint8_t raw_buf[ADMIN_HEADER_SIZE];
+
+    if (!read_exact(conn->fd, raw_buf, ADMIN_HEADER_SIZE)) {
+        return false; // Error de I/O o conexión cerrada
     }
 
-    conn->cmd          = (enum admin_cmd)conn->req_h.cmd;
-    conn->req_body_len = ntohs(conn->req_h.len);
+    // 3. Deserializar: Bytes -> Struct (Maneja ntohs/ntohl internamente)
+    if (admin_deserialize_req(raw_buf, ADMIN_HEADER_SIZE, &conn->req_h) < 0) {
+        return false; // Error de protocolo (buffer muy chico, etc)
+    }
+
+    conn->cmd = (enum admin_cmd)conn->req_h.cmd;
+    
+    conn->req_body_len = conn->req_h.len; 
 
     return true;
 }
@@ -149,21 +157,28 @@ static bool read_request_body(struct admin_connection *conn) {
         return true;
     }
 
+    // Asignación de memoria
     conn->req_body = malloc(conn->req_body_len);
     if (conn->req_body == NULL) {
+        // === Manejo de OOM (Out of Memory) ===
+        // Si no hay memoria, debemos "consumir" los bytes del socket para no desincronizar
+        // el protocolo, aunque luego devolvamos error.
         uint8_t tmp[256];
         uint16_t remaining = conn->req_body_len;
         while (remaining > 0) {
             size_t chunk = remaining > sizeof(tmp) ? sizeof(tmp) : remaining;
             if (!read_exact(conn->fd, tmp, chunk)) {
-                break;
+                break; // Si falla la lectura, cortamos
             }
             remaining -= (uint16_t)chunk;
         }
-        admin_prepare_error(conn, 1, "no_memory");
+        
         return false;
     }
 
+    // Lectura del cuerpo
+    // El cuerpo usualmente son datos crudos o strings, no requieren endianness swap
+    // a menos que definas estructuras complejas dentro.
     if (!read_exact(conn->fd, conn->req_body, conn->req_body_len)) {
         free(conn->req_body);
         conn->req_body = NULL;
@@ -174,13 +189,26 @@ static bool read_request_body(struct admin_connection *conn) {
 }
 
 static bool send_response(struct admin_connection *conn) {
-    if (!write_exact(conn->fd, &conn->resp_h, sizeof(conn->resp_h))) {
+    uint8_t header_buf[ADMIN_HEADER_SIZE];
+    uint8_t *p = header_buf;
+    uint32_t net_id = htonl(conn->resp_h.id);
+    memcpy(p, &net_id, 4);
+    p += 4;
+
+    *p++ = conn->resp_h.status;
+
+    uint16_t net_len = htons(conn->resp_h.len);
+    memcpy(p, &net_len, 2);
+    p += 2;
+
+    // === ENVIAR HEADER ===
+    if (!write_exact(conn->fd, header_buf, ADMIN_HEADER_SIZE)) {
         return false;
     }
 
-    uint16_t resp_len = ntohs(conn->resp_h.len);
-    if (resp_len > 0 && conn->resp_body != NULL) {
-        if (!write_exact(conn->fd, conn->resp_body, resp_len)) {
+    // === ENVIAR BODY ===
+    if (conn->resp_h.len > 0 && conn->resp_body != NULL) {
+        if (!write_exact(conn->fd, conn->resp_body, conn->resp_h.len)) {
             return false;
         }
     }

@@ -7,7 +7,7 @@
 static FILE * read_file(const char * file){
     FILE * logFile = fopen(file, "r"); //opens the file in read mode
     if (!logFile) {
-        print_error("[ERR] Couldn't open the log file");
+        print_error("Couldn't open the log file");
         return 0;
     }
     return logFile;

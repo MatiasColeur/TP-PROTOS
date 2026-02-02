@@ -2,65 +2,56 @@
 #include "../../include/errors.h"
 #include "../../include/shared.h"
 
-void admin_send_request(int sockfd,
-                               uint32_t id,
-                               uint8_t cmd,
-                               const char *payload) {
-    struct admin_req_header req;
-    struct admin_resp_header resp;
-
+void admin_send_request(int sockfd, uint32_t id, uint8_t cmd, const char *payload) {
     size_t payload_len = payload ? strlen(payload) : 0;
-    if (payload_len > UINT16_MAX) {
-        fprintf(stderr, "[ERR] Payload too large\n");
+    
+    struct admin_req_header req_h;
+    req_h.id = id;
+    req_h.cmd = cmd;
+    req_h.len = (uint16_t)payload_len;
+    uint8_t send_buf[1024]; 
+    
+    int bytes_to_send = admin_serialize_req(&req_h, (const uint8_t*)payload, send_buf, sizeof(send_buf));
+
+    if (bytes_to_send < 0) {
+        print_error("Error: Payload demasiado grande o buffer insuficiente");
         return;
     }
 
-    req.id  = htonl(id);
-    req.cmd = cmd;
-    req.len = htons((uint16_t)payload_len);
-
-    // Enviar header
-    if (!write_exact(sockfd, &req, sizeof(req))) {
-        print_error("Error escribiendo header admin");
-        exit(1);
+    // 3. Enviar los bytes serializados
+    if (!write_exact(sockfd, send_buf, bytes_to_send)) {
+        print_error("Error enviando request al servidor");
+        return; // O exit(1)
+    }
+    uint8_t header_buf[ADMIN_HEADER_SIZE];
+    
+    if (!read_exact(sockfd, header_buf, ADMIN_HEADER_SIZE)) {
+        print_error("Error leyendo header de respuesta admin (Posible desconexión del servidor)");
+        return;
     }
 
-    // Enviar payload, si hay
-    if (payload_len > 0) {
-        if (!write_exact(sockfd, payload, payload_len)) {
-            print_error("Error escribiendo payload admin");
-            exit(1);
-        }
+    // 5. Deserializar el header (Bytes -> Struct)
+    struct admin_resp_header resp_h;
+    if (admin_deserialize_resp(header_buf, ADMIN_HEADER_SIZE, &resp_h) < 0) {
+        print_error("Error deserializando respuesta");
+        return;
     }
 
-    // Leer header de respuesta
-    if (!read_exact(sockfd, &resp, sizeof(resp))) {
-        print_error("Error leyendo header de respuesta admin");
-        exit(1);
-    }
+    printf("[ADMIN] Resp id=%u status=%u len=%u\n", resp_h.id, resp_h.status, resp_h.len);
 
-    uint32_t resp_id  = ntohl(resp.id);
-    uint16_t resp_len = ntohs(resp.len);
+    if (resp_h.len > 0) {
+        // Reservar memoria o usar buffer estático según prefieras
+        char body_buf[1024]; 
+        size_t to_read = (resp_h.len < sizeof(body_buf) - 1) ? resp_h.len : sizeof(body_buf) - 1;
 
-    printf("[ADMIN] Resp id=%u status=%u len=%u\n",
-           resp_id, resp.status, resp_len);
-
-    // Leer payload de respuesta si lo hay
-    if (resp_len > 0) {
-        char buf[512];
-        if (resp_len >= sizeof(buf)) {
-            resp_len = sizeof(buf) - 1;
+        if (!read_exact(sockfd, body_buf, to_read)) {
+            print_error("Error leyendo cuerpo de respuesta");
+            return;
         }
-
-        if (!read_exact(sockfd, buf, resp_len)) {
-            print_error("Error leyendo payload de respuesta");
-            exit(1);
-        }
-        buf[resp_len] = '\0';
-        printf("[ADMIN] Payload: %s", buf);
-        if (buf[resp_len-1] != '\n') {
-            printf("\n");
-        }
+        
+        
+        body_buf[to_read] = '\0'; // Null-terminate para imprimir
+        printf("[ADMIN] Payload: %s\n", body_buf);
     }
 }
 
