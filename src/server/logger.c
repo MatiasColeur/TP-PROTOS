@@ -239,7 +239,6 @@ void log_credentials(const char *requester_user,
     char timestamp[64];
     current_timestamp_iso8601(timestamp, sizeof(timestamp));
 
-    // Formato: fecha | usuario requester | P | protocolo | destino | puerto destino | usuario capturado | password capturada
     fprintf(f, "%s\t%s\tP\t%s\t%s\t%d\t%s\t%s\n",
             timestamp,
             requester_user,
@@ -248,7 +247,6 @@ void log_credentials(const char *requester_user,
             dst_port,
             captured_user,
             captured_password);
-    // También a stdout, sin prefijos
     printf("%s\t%s\tP\t%s\t%s\t%d\t%s\t%s\n",
            timestamp,
            requester_user,
