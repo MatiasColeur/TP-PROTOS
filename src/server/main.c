@@ -9,6 +9,8 @@
 #include <unistd.h>
 #include <signal.h>
 #include <netinet/in.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 
 #include "../../include/util.h"
 #include "../../include/selector.h"
@@ -19,6 +21,7 @@
 
 #define MAX_PENDING_CONNECTION_REQUESTS 128
 #define MAX_SOCKETS 1024
+#define LOGS_DIRECTORY "logs"
 
 /* ==================== Server Config ==================== */
 
@@ -216,6 +219,18 @@ static void selector_loop(fd_selector selector) {
     }
 }
 
+void ensure_directory_exists(const char *dir_path) {
+    struct stat st = {0};
+
+    if (stat(dir_path, &st) == -1) {
+        if (mkdir(dir_path, 0700) == -1) {
+            print_error("Couldn't create logs directory");
+        } else {
+            print_success("Directory '%s' successfully created.\n", dir_path);
+        }
+    }
+}
+
 /* ==================== main ==================== */
 
 
@@ -247,6 +262,8 @@ int main(int argc, const char* argv[]) {
         args_destroy(&args, &SERVER_CFG);
         return EXIT_FAILURE;
     }
+    
+    ensure_directory_exists(LOGS_DIRECTORY);
 
     init_log();
 
