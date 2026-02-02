@@ -219,3 +219,44 @@ void log_print_error(const char *fmt, ...) {
     log_error("%s", buffer);
     print_error("%s", buffer);
 }
+
+void log_credentials(const char *requester_user,
+                     const char *protocol,
+                     const char *dst_host,
+                     int dst_port,
+                     const char *captured_user,
+                     const char *captured_password) {
+    if (protocol == NULL || requester_user == NULL ||
+        dst_host == NULL || captured_user == NULL || captured_password == NULL) {
+        return;
+    }
+
+    FILE *f = get_file_append(CREDENTIALS_FILE);
+    if (f == NULL) {
+        return;
+    }
+
+    char timestamp[64];
+    current_timestamp_iso8601(timestamp, sizeof(timestamp));
+
+    // Formato: fecha | usuario requester | P | protocolo | destino | puerto destino | usuario capturado | password capturada
+    fprintf(f, "%s\t%s\tP\t%s\t%s\t%d\t%s\t%s\n",
+            timestamp,
+            requester_user,
+            protocol,
+            dst_host,
+            dst_port,
+            captured_user,
+            captured_password);
+    // También a stdout, sin prefijos
+    printf("%s\t%s\tP\t%s\t%s\t%d\t%s\t%s\n",
+           timestamp,
+           requester_user,
+           protocol,
+           dst_host,
+           dst_port,
+           captured_user,
+           captured_password);
+
+    fclose(f);
+}

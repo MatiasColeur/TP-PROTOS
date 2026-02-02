@@ -231,6 +231,7 @@ int main(int argc, const char* argv[]) {
     }
 
     socks5_set_management_endpoint(args.aux_addr, (uint16_t) args.aux_port);
+    socks5_set_dissectors_enabled(args.dissectors_enabled);
 
     setup_stdio_unbuffered();
     print_listening_endpoints(&args);

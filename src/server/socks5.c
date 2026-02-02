@@ -1,5 +1,6 @@
 #include "../../include/socks5.h"
 
+#include <ctype.h>
 
 #define BUFFER_SIZE         4096
 
@@ -9,11 +10,15 @@
 #define MAX_USERNAME_LENGTH 255
 #define MAX_PASSWORD_LENGTH 255
 
+#define POP3_PORT           110
+#define POP3_LINE_MAX       512
+
 #define SOCKS5_STATES  (sizeof(socks5_states) / sizeof(socks5_states[0]))
 #define ATTACHMENT(key) ((struct socks5_connection *)(key)->data)
 
 static char management_host[MAX_HOSTNAME_LENGTH + 1] = LOOPBACK_IPV4;
 static uint16_t management_port = ADMIN_API_PORT;
+static bool dissectors_enabled = true;
 
 /**
  * @brief Per-connection state and resources for a SOCKS5 session.
@@ -139,6 +144,47 @@ struct socks5_connection {
      * @brief String-formatted BND.ADDR for the reply. 
      */
     char bnd_addr_str[ADDR_BUFFER_LEN];
+
+/* -------- Dissectors -------- */
+
+    /** 
+     * @brief Whether dissectors are enabled for this connection.
+     */
+    bool dissector_enabled;
+
+    /** 
+     * @brief True if this connection should attempt POP3 sniffing.
+     */
+    bool pop3_candidate;
+
+    /** 
+     * @brief Whether we've already logged POP3 creds to avoid duplicates.
+     */
+    bool pop3_logged;
+
+    /**
+     * @brief True once we saw a USER line and stored it.
+     */
+    bool pop3_user_set;
+
+    /**
+     * @brief Last USER value observed.
+     */
+    char pop3_user[MAX_USERNAME_LENGTH + 1];
+
+    /**
+     * @brief Accumulator for client->server text lines.
+     */
+    char pop3_line[POP3_LINE_MAX];
+    size_t pop3_line_len;
+    bool pop3_drop_line;
+
+    /**
+     * @brief Cached client endpoint info for logging.
+     */
+    bool client_info_cached;
+    char client_ip[INET6_ADDRSTRLEN];
+    int client_port;
 };
 
 typedef struct socks5_connection * socks5_connection_ptr;
@@ -224,6 +270,11 @@ static unsigned relay_on_write     (struct selector_key *key);
 
 static void     done_on_arrival    (const unsigned state, struct selector_key *key);
 static void     error_on_arrival   (const unsigned state, struct selector_key *key);
+
+/* Dissectors */
+static void pop3_dissector_feed(socks5_connection_ptr conn, const uint8_t *data, size_t len);
+static void pop3_handle_line(socks5_connection_ptr conn, const char *line, size_t len);
+static void cache_client_info(socks5_connection_ptr conn);
 
 
 /**
@@ -595,6 +646,14 @@ static unsigned request_on_read(struct selector_key *key) {
         struct sockaddr_in6 *sa6 = (struct sockaddr_in6 *)&conn->dst_addr;
         sa6->sin6_port = htons(conn->port);
     }
+
+    // Refresh dissector state with the new destination info
+    conn->pop3_candidate = conn->dissector_enabled && (conn->port == POP3_PORT);
+    conn->pop3_line_len = 0;
+    conn->pop3_drop_line = false;
+    conn->pop3_user_set = false;
+    conn->pop3_logged = false;
+    conn->pop3_user[0] = '\0';
 
     buffer_read_adv(b, required_len);
 
@@ -1009,6 +1068,9 @@ static unsigned relay_on_read(struct selector_key *key) {
 
     if (n > 0) {
         // Success
+        if (key->fd == conn->client_fd && conn->pop3_candidate) {
+            pop3_dissector_feed(conn, ptr, (size_t)n);
+        }
         buffer_write_adv(b_read, n);
 
         // Set write in the other socket
@@ -1075,6 +1137,124 @@ static unsigned relay_on_write(struct selector_key *key) {
     }
 
     return SOCKS5_RELAY;
+}
+
+/* -------- POP3 dissector helpers --------*/
+
+static inline int ascii_tolower_int(int c) {
+    return (c >= 'A' && c <= 'Z') ? c + ('a' - 'A') : c;
+}
+
+static bool starts_with_ci(const char *line, size_t len, const char *kw) {
+    size_t klen = strlen(kw);
+    if (len < klen) return false;
+    for (size_t i = 0; i < klen; i++) {
+        if (ascii_tolower_int(line[i]) != ascii_tolower_int(kw[i])) return false;
+    }
+    return true;
+}
+
+static void cache_client_info(socks5_connection_ptr conn) {
+    if (conn->client_info_cached) return;
+
+    struct sockaddr_storage sa;
+    socklen_t slen = sizeof(sa);
+    if (getpeername(conn->client_fd, (struct sockaddr *)&sa, &slen) == 0) {
+        if (sa.ss_family == AF_INET) {
+            struct sockaddr_in *v4 = (struct sockaddr_in *)&sa;
+            inet_ntop(AF_INET, &v4->sin_addr, conn->client_ip, sizeof(conn->client_ip));
+            conn->client_port = ntohs(v4->sin_port);
+        } else if (sa.ss_family == AF_INET6) {
+            struct sockaddr_in6 *v6 = (struct sockaddr_in6 *)&sa;
+            inet_ntop(AF_INET6, &v6->sin6_addr, conn->client_ip, sizeof(conn->client_ip));
+            conn->client_port = ntohs(v6->sin6_port);
+        } else {
+            strncpy(conn->client_ip, "unknown", sizeof(conn->client_ip) - 1);
+            conn->client_ip[sizeof(conn->client_ip) - 1] = '\0';
+            conn->client_port = 0;
+        }
+    } else {
+        strncpy(conn->client_ip, "unknown", sizeof(conn->client_ip) - 1);
+        conn->client_ip[sizeof(conn->client_ip) - 1] = '\0';
+        conn->client_port = 0;
+    }
+
+    conn->client_info_cached = true;
+}
+
+static void pop3_handle_line(socks5_connection_ptr conn, const char *line, size_t len) {
+    if (!conn->pop3_candidate || conn->pop3_logged) return;
+    if (len == 0) return;
+
+    if (line[len - 1] == '\r') {
+        len--;
+    }
+    if (len == 0) return;
+
+    if (starts_with_ci(line, len, "USER")) {
+        size_t idx = 4;
+        while (idx < len && line[idx] == ' ') idx++;
+        size_t ulen = (len > idx) ? (len - idx) : 0;
+        if (ulen >= sizeof(conn->pop3_user)) ulen = sizeof(conn->pop3_user) - 1;
+        memcpy(conn->pop3_user, line + idx, ulen);
+        conn->pop3_user[ulen] = '\0';
+        conn->pop3_user_set = (ulen > 0);
+    } else if (starts_with_ci(line, len, "PASS")) {
+        if (!conn->pop3_user_set || conn->pop3_logged) return;
+        size_t idx = 4;
+        while (idx < len && line[idx] == ' ') idx++;
+        size_t plen = (len > idx) ? (len - idx) : 0;
+        if (plen == 0) return;
+
+        char password[MAX_PASSWORD_LENGTH + 1];
+        if (plen >= sizeof(password)) plen = sizeof(password) - 1;
+        memcpy(password, line + idx, plen);
+        password[plen] = '\0';
+
+        cache_client_info(conn);
+        log_credentials(conn->username,
+                        "POP3",
+                        conn->host,
+                        conn->port,
+                        conn->pop3_user_set ? conn->pop3_user : "",
+                        password);
+        conn->pop3_logged = true;
+    }
+}
+
+static void pop3_dissector_feed(socks5_connection_ptr conn, const uint8_t *data, size_t len) {
+    if (!conn->dissector_enabled || !conn->pop3_candidate || data == NULL) return;
+
+    for (size_t i = 0; i < len; i++) {
+        char c = (char)data[i];
+
+        if (conn->pop3_drop_line) {
+            if (c == '\n') {
+                conn->pop3_drop_line = false;
+                conn->pop3_line_len = 0;
+            }
+            continue;
+        }
+
+        if (c == '\n') {
+            conn->pop3_line[conn->pop3_line_len] = '\0';
+            pop3_handle_line(conn, conn->pop3_line, conn->pop3_line_len);
+            conn->pop3_line_len = 0;
+            continue;
+        }
+
+        if (c == '\r') {
+            continue;
+        }
+
+        if (conn->pop3_line_len + 1 >= POP3_LINE_MAX) {
+            conn->pop3_drop_line = true;
+            conn->pop3_line_len = 0;
+            continue;
+        }
+
+        conn->pop3_line[conn->pop3_line_len++] = c;
+    }
 }
 
 /* -------- SOCKS5_DONE state handlers --------*/
@@ -1174,6 +1354,16 @@ new_socks5_connection(fd_selector selector, int client_fd) {
     conn->client_fd = client_fd;
     conn->remote_fd = -1;
     conn->selector = selector;
+    conn->dissector_enabled = dissectors_enabled;
+    conn->pop3_candidate = false;
+    conn->pop3_logged = false;
+    conn->pop3_user_set = false;
+    conn->pop3_user[0] = '\0';
+    conn->pop3_line_len = 0;
+    conn->pop3_drop_line = false;
+    conn->client_info_cached = false;
+    conn->client_ip[0] = '\0';
+    conn->client_port = 0;
 
     return conn;
 }
@@ -1251,6 +1441,10 @@ uint8_t errno_to_socks_status(int err) {
         case EADDRNOTAVAIL: return STATUS_ADDRESS_TYPE_NOT_SUPPORTED;
         default:           return STATUS_GENERAL_SERVER_FAILURE;
     }
+}
+
+void socks5_set_dissectors_enabled(bool enabled) {
+    dissectors_enabled = enabled;
 }
 
 void socks5_set_management_endpoint(const char *addr, uint16_t port) {

@@ -61,6 +61,7 @@ typedef enum {
 
 void handle_new_client(fd_selector selector, int client_fd);
 void socks5_set_management_endpoint(const char *addr, uint16_t port);
+void socks5_set_dissectors_enabled(bool enabled);
 uint8_t errno_to_socks_status(int err);
 
 #endif
