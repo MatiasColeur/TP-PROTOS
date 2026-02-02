@@ -236,6 +236,13 @@ int main(int argc, const char* argv[]) {
     print_listening_endpoints(&args);
 
     int server_fd = create_listen_socket_ipv6_any((uint16_t) args.socks_port);
+    
+    int val = 1;
+    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &val, sizeof(val)) < 0) {
+        close(server_fd);
+        return EXIT_FAILURE;
+    }
+
     if (server_fd < 0) {
         args_destroy(&args, &SERVER_CFG);
         return EXIT_FAILURE;
