@@ -21,7 +21,7 @@
 
 #define MAX_PENDING_CONNECTION_REQUESTS 128
 #define MAX_SOCKETS 1024
-#define LOGS_DIRECTORY "logs"
+#define LOGS_DIRECTORY "log"
 
 /* ==================== Server Config ==================== */
 
@@ -231,6 +231,29 @@ void ensure_directory_exists(const char *dir_path) {
     }
 }
 
+static void ensure_file_exists(const char *filepath) {
+    FILE *fp = fopen(filepath, "a");
+    if (fp == NULL) {
+        print_error("Failed to initialize log file: %s\n", filepath);
+    } else {
+        fclose(fp);
+    }
+}
+
+/**
+ * @brief Inicializa la estructura de directorios y archivos de log.
+ * Llamar a esto al inicio del main().
+ */
+void init_log_structure() {
+    ensure_directory_exists(LOGS_DIRECTORY);
+
+    ensure_file_exists(ACCESS_FILE);
+    ensure_file_exists(CONCURRENCIES_FILE);
+    ensure_file_exists(BYTES_FILE);
+    ensure_file_exists(LOGS_FILE);
+    ensure_file_exists(ERRORS_FILE);
+}
+
 /* ==================== main ==================== */
 
 
@@ -262,8 +285,8 @@ int main(int argc, const char* argv[]) {
         args_destroy(&args, &SERVER_CFG);
         return EXIT_FAILURE;
     }
-    
-    ensure_directory_exists(LOGS_DIRECTORY);
+
+    init_log_structure();
 
     init_log();
 
