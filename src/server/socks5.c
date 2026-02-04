@@ -1,6 +1,7 @@
 #include "../../include/socks5.h"
 
 #include <ctype.h>
+#include <strings.h>
 
 #define BUFFER_SIZE         4096
 
@@ -11,6 +12,10 @@
 #define MAX_PASSWORD_LENGTH 255
 
 #define POP3_PORT           110
+#define HTTP_PORT           80
+#define HTTP_PORT_ALT       8080
+#define HTTP_HEADER_MAX     8192
+#define HTTP_BODY_MAX       16384
 #define POP3_LINE_MAX       512
 
 #define SOCKS5_STATES  (sizeof(socks5_states) / sizeof(socks5_states[0]))
@@ -185,6 +190,18 @@ struct socks5_connection {
     bool client_info_cached;
     char client_ip[INET6_ADDRSTRLEN];
     int client_port;
+
+    /* -------- HTTP dissector -------- */
+    bool http_candidate;
+    bool http_logged;
+    bool http_header_done;
+    bool http_is_post;
+    bool http_is_urlencoded;
+    size_t http_header_len;
+    size_t http_body_len;
+    size_t http_content_length;
+    char http_header_buf[HTTP_HEADER_MAX];
+    char http_body_buf[HTTP_BODY_MAX];
 };
 
 typedef struct socks5_connection * socks5_connection_ptr;
@@ -274,6 +291,8 @@ static void     error_on_arrival   (const unsigned state, struct selector_key *k
 /* Dissectors */
 static void pop3_dissector_feed(socks5_connection_ptr conn, const uint8_t *data, size_t len);
 static void pop3_handle_line(socks5_connection_ptr conn, const char *line, size_t len);
+static void http_reset_state(socks5_connection_ptr conn);
+static void http_dissector_feed(socks5_connection_ptr conn, const uint8_t *data, size_t len);
 static void cache_client_info(socks5_connection_ptr conn);
 
 
@@ -654,6 +673,9 @@ static unsigned request_on_read(struct selector_key *key) {
     conn->pop3_user_set = false;
     conn->pop3_logged = false;
     conn->pop3_user[0] = '\0';
+    conn->http_candidate = conn->dissector_enabled &&
+                           (conn->port == HTTP_PORT || conn->port == HTTP_PORT_ALT);
+    http_reset_state(conn);
 
     buffer_read_adv(b, required_len);
 
@@ -1068,8 +1090,13 @@ static unsigned relay_on_read(struct selector_key *key) {
 
     if (n > 0) {
         // Success
-        if (key->fd == conn->client_fd && conn->pop3_candidate) {
-            pop3_dissector_feed(conn, ptr, (size_t)n);
+        if (key->fd == conn->client_fd) {
+            if (conn->pop3_candidate) {
+                pop3_dissector_feed(conn, ptr, (size_t)n);
+            }
+            if (conn->http_candidate) {
+                http_dissector_feed(conn, ptr, (size_t)n);
+            }
         }
         buffer_write_adv(b_read, n);
 
@@ -1152,6 +1179,281 @@ static bool starts_with_ci(const char *line, size_t len, const char *kw) {
         if (ascii_tolower_int(line[i]) != ascii_tolower_int(kw[i])) return false;
     }
     return true;
+}
+
+static char *find_double_crlf(char *buf, size_t len) {
+    if (len < 4) return NULL;
+    for (size_t i = 0; i + 3 < len; i++) {
+        if (buf[i] == '\r' && buf[i + 1] == '\n' &&
+            buf[i + 2] == '\r' && buf[i + 3] == '\n') {
+            return buf + i;
+        }
+    }
+    return NULL;
+}
+
+static int hex_value(int c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return 10 + (c - 'a');
+    if (c >= 'A' && c <= 'F') return 10 + (c - 'A');
+    return -1;
+}
+
+static size_t url_decode_inplace(char *s) {
+    size_t i = 0, o = 0;
+    while (s[i] != '\0') {
+        if (s[i] == '%' && s[i + 1] && s[i + 2]) {
+            int hi = hex_value((unsigned char)s[i + 1]);
+            int lo = hex_value((unsigned char)s[i + 2]);
+            if (hi >= 0 && lo >= 0) {
+                s[o++] = (char)((hi << 4) | lo);
+                i += 3;
+                continue;
+            }
+        } else if (s[i] == '+') {
+            s[o++] = ' ';
+            i++;
+            continue;
+        }
+        s[o++] = s[i++];
+    }
+    s[o] = '\0';
+    return o;
+}
+
+static int b64_index(int c) {
+    if (c >= 'A' && c <= 'Z') return c - 'A';
+    if (c >= 'a' && c <= 'z') return c - 'a' + 26;
+    if (c >= '0' && c <= '9') return c - '0' + 52;
+    if (c == '+') return 62;
+    if (c == '/') return 63;
+    return -1;
+}
+
+static bool base64_decode(const char *in, size_t in_len, unsigned char *out, size_t out_cap, size_t *out_len) {
+    size_t i = 0, o = 0;
+    int val = 0, valb = -8;
+    while (i < in_len) {
+        int c = (unsigned char)in[i++];
+        if (c == '=') break;
+        int d = b64_index(c);
+        if (d < 0) continue;
+        val = (val << 6) | d;
+        valb += 6;
+        if (valb >= 0) {
+            if (o >= out_cap) return false;
+            out[o++] = (unsigned char)((val >> valb) & 0xFF);
+            valb -= 8;
+        }
+    }
+    if (out_len) *out_len = o;
+    return true;
+}
+
+static void http_reset_state(socks5_connection_ptr conn) {
+    conn->http_logged = false;
+    conn->http_header_done = false;
+    conn->http_is_post = false;
+    conn->http_is_urlencoded = false;
+    conn->http_header_len = 0;
+    conn->http_body_len = 0;
+    conn->http_content_length = 0;
+}
+
+static bool http_header_line_ci(const char *line, size_t len, const char *name) {
+    size_t nlen = strlen(name);
+    if (len < nlen + 1) return false;
+    if (!starts_with_ci(line, nlen, name)) return false;
+    return line[nlen] == ':';
+}
+
+static void http_parse_headers(socks5_connection_ptr conn, const char *buf, size_t len) {
+    const char *p = buf;
+    const char *end = buf + len;
+    bool first_line = true;
+
+    while (p < end) {
+        const char *line_end = memchr(p, '\n', (size_t)(end - p));
+        if (line_end == NULL) break;
+        size_t line_len = (size_t)(line_end - p);
+        if (line_len > 0 && p[line_len - 1] == '\r') line_len--;
+        if (line_len == 0) break;
+
+        if (first_line) {
+            first_line = false;
+            if (starts_with_ci(p, line_len, "POST")) {
+                conn->http_is_post = true;
+            }
+        } else if (http_header_line_ci(p, line_len, "Content-Length")) {
+            const char *v = p + strlen("Content-Length") + 1;
+            while (v < p + line_len && (*v == ' ' || *v == '\t')) v++;
+            conn->http_content_length = (size_t)strtoul(v, NULL, 10);
+        } else if (http_header_line_ci(p, line_len, "Content-Type")) {
+            const char *v = p + strlen("Content-Type") + 1;
+            while (v < p + line_len && (*v == ' ' || *v == '\t')) v++;
+            if ((size_t)(p + line_len - v) >= 33 &&
+                strncasecmp(v, "application/x-www-form-urlencoded", 33) == 0) {
+                conn->http_is_urlencoded = true;
+            }
+        } else if (!conn->http_logged && http_header_line_ci(p, line_len, "Authorization")) {
+            const char *v = p + strlen("Authorization") + 1;
+            while (v < p + line_len && (*v == ' ' || *v == '\t')) v++;
+            if ((size_t)(p + line_len - v) >= 6 && strncasecmp(v, "Basic ", 6) == 0) {
+                const char *b64 = v + 6;
+                size_t b64_len = (size_t)(p + line_len - b64);
+                unsigned char decoded[512];
+                size_t decoded_len = 0;
+                if (base64_decode(b64, b64_len, decoded, sizeof(decoded) - 1, &decoded_len)) {
+                    decoded[decoded_len] = '\0';
+                    char *sep = strchr((char *)decoded, ':');
+                    if (sep != NULL) {
+                        *sep = '\0';
+                        const char *u = (const char *)decoded;
+                        const char *pw = sep + 1;
+                        if (*u != '\0' && *pw != '\0') {
+                            log_credentials(conn->username, "HTTP", conn->host, conn->port, u, pw);
+                            conn->http_logged = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        p = line_end + 1;
+    }
+}
+
+static bool http_extract_form_credentials(char *body, char *out_user, size_t out_user_len,
+                                          char *out_pass, size_t out_pass_len) {
+    const char *user_keys[] = {"user", "username", "email", "login", "uid"};
+    const char *pass_keys[] = {"pass", "password", "pwd", "passwd"};
+    bool got_user = false, got_pass = false;
+
+    char *saveptr = NULL;
+    for (char *pair = strtok_r(body, "&", &saveptr); pair != NULL; pair = strtok_r(NULL, "&", &saveptr)) {
+        char *eq = strchr(pair, '=');
+        if (eq == NULL) continue;
+        *eq = '\0';
+        char *key = pair;
+        char *val = eq + 1;
+        url_decode_inplace(key);
+        url_decode_inplace(val);
+
+        if (!got_user) {
+            for (size_t i = 0; i < sizeof(user_keys) / sizeof(user_keys[0]); i++) {
+                if (strcasecmp(key, user_keys[i]) == 0) {
+                    strncpy(out_user, val, out_user_len - 1);
+                    out_user[out_user_len - 1] = '\0';
+                    got_user = true;
+                    break;
+                }
+            }
+        }
+        if (!got_pass) {
+            for (size_t i = 0; i < sizeof(pass_keys) / sizeof(pass_keys[0]); i++) {
+                if (strcasecmp(key, pass_keys[i]) == 0) {
+                    strncpy(out_pass, val, out_pass_len - 1);
+                    out_pass[out_pass_len - 1] = '\0';
+                    got_pass = true;
+                    break;
+                }
+            }
+        }
+        if (got_user && got_pass) return true;
+    }
+    return got_user && got_pass;
+}
+
+static void http_dissector_feed(socks5_connection_ptr conn, const uint8_t *data, size_t len) {
+    if (!conn->dissector_enabled || !conn->http_candidate || data == NULL) return;
+
+    size_t i = 0;
+    while (i < len) {
+        if (!conn->http_header_done) {
+            size_t space = HTTP_HEADER_MAX - conn->http_header_len;
+            size_t take = (len - i < space) ? (len - i) : space;
+            if (take > 0) {
+                memcpy(conn->http_header_buf + conn->http_header_len, data + i, take);
+                conn->http_header_len += take;
+                i += take;
+            } else {
+                return;
+            }
+
+            char *hdr_end = NULL;
+            if (conn->http_header_len >= 4) {
+                hdr_end = find_double_crlf(conn->http_header_buf, conn->http_header_len);
+            }
+            if (hdr_end == NULL) continue;
+
+            size_t header_size = (size_t)(hdr_end - conn->http_header_buf) + 4;
+            size_t extra_len = conn->http_header_len - header_size;
+            conn->http_header_done = true;
+
+            http_parse_headers(conn, conn->http_header_buf, header_size);
+
+            if (conn->http_is_post && conn->http_is_urlencoded && conn->http_content_length > 0) {
+                size_t to_copy = extra_len;
+                if (to_copy > 0) {
+                    if (to_copy > HTTP_BODY_MAX) to_copy = HTTP_BODY_MAX;
+                    memcpy(conn->http_body_buf, conn->http_header_buf + header_size, to_copy);
+                    conn->http_body_len = to_copy;
+                }
+                if (conn->http_body_len >= conn->http_content_length) {
+                    conn->http_body_buf[(conn->http_body_len < HTTP_BODY_MAX) ? conn->http_body_len : (HTTP_BODY_MAX - 1)] = '\0';
+                    if (!conn->http_logged) {
+                        char user[256] = {0};
+                        char pass[256] = {0};
+                        char body_copy[HTTP_BODY_MAX];
+                        strncpy(body_copy, conn->http_body_buf, sizeof(body_copy) - 1);
+                        body_copy[sizeof(body_copy) - 1] = '\0';
+                        if (http_extract_form_credentials(body_copy, user, sizeof(user), pass, sizeof(pass))) {
+                            log_credentials(conn->username, "HTTP", conn->host, conn->port, user, pass);
+                            conn->http_logged = true;
+                        }
+                    }
+                    http_reset_state(conn);
+                }
+            } else {
+                http_reset_state(conn);
+            }
+
+            continue;
+        }
+
+        if (conn->http_is_post && conn->http_is_urlencoded && conn->http_content_length > 0) {
+            size_t remaining = conn->http_content_length - conn->http_body_len;
+            size_t take = (len - i < remaining) ? (len - i) : remaining;
+            if (take > 0) {
+                if (conn->http_body_len + take > HTTP_BODY_MAX) {
+                    take = HTTP_BODY_MAX - conn->http_body_len;
+                }
+                if (take > 0) {
+                    memcpy(conn->http_body_buf + conn->http_body_len, data + i, take);
+                    conn->http_body_len += take;
+                    i += take;
+                }
+            }
+
+            if (conn->http_body_len >= conn->http_content_length) {
+                conn->http_body_buf[(conn->http_body_len < HTTP_BODY_MAX) ? conn->http_body_len : (HTTP_BODY_MAX - 1)] = '\0';
+                if (!conn->http_logged) {
+                    char user[256] = {0};
+                    char pass[256] = {0};
+                    char body_copy[HTTP_BODY_MAX];
+                    strncpy(body_copy, conn->http_body_buf, sizeof(body_copy) - 1);
+                    body_copy[sizeof(body_copy) - 1] = '\0';
+                    if (http_extract_form_credentials(body_copy, user, sizeof(user), pass, sizeof(pass))) {
+                        log_credentials(conn->username, "HTTP", conn->host, conn->port, user, pass);
+                        conn->http_logged = true;
+                    }
+                }
+                http_reset_state(conn);
+            }
+        } else {
+            http_reset_state(conn);
+        }
+    }
 }
 
 static void cache_client_info(socks5_connection_ptr conn) {
@@ -1361,6 +1663,8 @@ new_socks5_connection(fd_selector selector, int client_fd) {
     conn->pop3_user[0] = '\0';
     conn->pop3_line_len = 0;
     conn->pop3_drop_line = false;
+    conn->http_candidate = false;
+    http_reset_state(conn);
     conn->client_info_cached = false;
     conn->client_ip[0] = '\0';
     conn->client_port = 0;
@@ -1377,7 +1681,7 @@ socks5_stm_init(socks5_connection_ptr conn) {
     stm_init(&conn->stm);
 }
 
-static void 
+static void
 socks5_buffers_init(socks5_connection_ptr conn) {
     
     buffer_init(&conn->client_read_buf, sizeof(conn->client_read_raw), conn->client_read_raw);
