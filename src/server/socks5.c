@@ -1,7 +1,7 @@
 #include "../../include/socks5.h"
 
 
-#define BUFFER_SIZE         4096
+#define BUFFER_SIZE         16384 // buffer más grande (16KB) para evitar fragmentación TCP y reducir syscalls
 
 #define ADDR_BUFFER_LEN     64
 
@@ -1013,8 +1013,9 @@ static unsigned relay_on_read(struct selector_key *key) {
         uint8_t *wptr = buffer_read_ptr(b_read, &wsize);
 
         ssize_t wn = send(other_fd, wptr, wsize, MSG_NOSIGNAL);
-
+        
         if (wn > 0) {
+            log_bytes((uint64_t)wn);
             buffer_read_adv(b_read, wn);
         }
 
