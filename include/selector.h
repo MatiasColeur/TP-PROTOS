@@ -60,6 +60,10 @@ typedef enum {
     SELECTOR_IO       = 5,
 } selector_status;
 
+#define MAX_SOCKETS 1024
+#define MAX_PENDING_CONNECTION_REQUESTS 128
+
+
 /** retorna una descripción humana del fallo */
 const char *
 selector_error(const selector_status status);
@@ -189,5 +193,13 @@ selector_fd_set_nio(const int fd);
 selector_status
 selector_notify_block(fd_selector s,
                  const int   fd);
+
+
+void create_selector_or_exit(selector_status *st_out, fd_selector *selector_out);
+
+int create_listen_socket_ipv6_any(const uint16_t port);
+
+void selector_loop(fd_selector selector);
+
 
 #endif

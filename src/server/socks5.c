@@ -756,8 +756,6 @@ static void connect_on_arrival(const unsigned state, struct selector_key *key) {
 
     if (rc == -1 && errno == EINPROGRESS) {
 
-            log_print_error("connect() failed immediately: %s", strerror(errno));
-
         // connect no bloqueante: esperar a que el remote_fd sea write-ready
         conn->remote_fd = fd;
         conn->connect_status = SUCCESS; // “optimista”; se confirma en connect_on_write con SO_ERROR
@@ -852,7 +850,6 @@ static unsigned connect_on_write(struct selector_key *key) {
         socklen_t len = sizeof(error);
         
         getsockopt(conn->remote_fd, SOL_SOCKET, SO_ERROR, &error, &len);
-log_print_info("SO_ERROR = %d (%s)", error, strerror(error));
 
         if (error == 0) {
             conn->connect_status =SUCCESS; 
@@ -1030,7 +1027,11 @@ static unsigned relay_on_read(struct selector_key *key) {
             return SOCKS5_DONE;
         }
 
-    } else {
+    }else if (errno == ECONNRESET) {
+            printf("[INF] Connection reset by peer\n");
+            return SOCKS5_DONE; 
+        }
+     else {
         // ERROR: recv got -1
         if (errno != EAGAIN && errno != EWOULDBLOCK) {
             log_print_error("Error en túnel recv: %s", strerror(errno));

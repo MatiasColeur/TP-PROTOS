@@ -20,7 +20,6 @@
 #include "../../include/socks5.h"
 
 #define MAX_PENDING_CONNECTION_REQUESTS 128
-#define MAX_SOCKETS 1024
 #define LOGS_DIRECTORY "log"
 
 /* ==================== Server Config ==================== */
@@ -112,81 +111,6 @@ static void print_listening_endpoints(const ProgramArgs *args) {
     print_info("Management API will be reached at %s:%d when required", args->aux_addr, args->aux_port);
 }
 
-static int create_listen_socket_ipv6_any(const uint16_t port) {
-    int fd = socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP);
-    if (fd < 0) {
-        print_error("socket()");
-        return -1;
-    }
-
-    if (selector_fd_set_nio(fd) == -1) {
-        print_error("selector_fd_set_nio(serverSocket)");
-        close(fd);
-        return -1;
-    }
-
-    struct sockaddr_in6 srcSocket;
-    memset(&srcSocket, 0, sizeof(srcSocket));
-    srcSocket.sin6_family = AF_INET6;
-    srcSocket.sin6_port   = htons(port);
-    memcpy(&srcSocket.sin6_addr, &in6addr_any, sizeof(in6addr_any));
-
-    int one = 1;
-    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
-
-    if (bind(fd, (struct sockaddr*)&srcSocket, sizeof(srcSocket)) != 0) {
-        print_error("bind()");
-        close(fd);
-        return -1;
-    }
-
-    if (listen(fd, MAX_PENDING_CONNECTION_REQUESTS) != 0) {
-        print_error("listen()");
-        close(fd);
-        return -1;
-    }
-
-    struct sockaddr_storage boundAddress;
-    socklen_t boundAddressLen = sizeof(boundAddress);
-    if (getsockname(fd, (struct sockaddr*)&boundAddress, &boundAddressLen) >= 0) {
-        char addrBuffer[128];
-        printSocketAddress((struct sockaddr*)&boundAddress, addrBuffer);
-        print_info("Binding to %s\n", addrBuffer);
-    } else {
-        print_error("Failed to getsockname()");
-    }
-
-    return fd;
-}
-
-/**
- * Inicializa la librería selector + crea el selector.
- */
-static void create_selector_or_exit(selector_status *st_out, fd_selector *selector_out) {
-    struct selector_init init = {
-        .signal = SIGUSR1,
-        .select_timeout = {
-            .tv_sec  = 5,
-            .tv_nsec = 0,
-        },
-    };
-
-    selector_status st = selector_init(&init);
-    if (st != SELECTOR_SUCCESS) {
-        fprintf(stderr, "selector_init error: %s\n", selector_error(st));
-        exit(EXIT_FAILURE);
-    }
-
-    fd_selector sel = selector_new(MAX_SOCKETS);
-    if (sel == NULL) {
-        fprintf(stderr, "selector_new error\n");
-        selector_close();
-        exit(EXIT_FAILURE);
-    }
-
-    *st_out = st;
-    *selector_out = sel;
-}
 
 static void register_acceptor_or_exit(fd_selector selector, int server_fd) {
     selector_status st = selector_register(selector, server_fd, &accept_handler, OP_READ, NULL);
@@ -206,16 +130,6 @@ static void maybe_bootstrap_users_async(const ProgramArgs *args) {
         sleep(1);
         bootstrap_cli_users_via_api(args);
         _exit(0);
-    }
-}
-
-static void selector_loop(fd_selector selector) {
-    for (;;) {
-        selector_status st = selector_select(selector);
-        if (st != SELECTOR_SUCCESS) {
-            fprintf(stderr, "selector_select error: %s\n", selector_error(st));
-            break;
-        }
     }
 }
 

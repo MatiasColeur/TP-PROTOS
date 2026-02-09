@@ -8,6 +8,7 @@
 #include <errno.h>  // :)
 #include <pthread.h>
 #include <signal.h>
+#include <netinet/in.h>
 
 #include <stdint.h> // SIZE_MAX
 #include <unistd.h>
@@ -17,6 +18,7 @@
 #include <sys/select.h>
 #include <sys/signal.h>
 #include "../../include/selector.h"
+#include "../../include/util.h"
 
 #define N(x) (sizeof(x)/sizeof((x)[0]))
 
@@ -590,4 +592,88 @@ selector_fd_set_nio(const int fd) {
         }
     }
     return ret;
+}
+
+
+void create_selector_or_exit(selector_status *st_out, fd_selector *selector_out) {
+    struct selector_init init = {
+        .signal = SIGUSR1,
+        .select_timeout = {
+            .tv_sec  = 5,
+            .tv_nsec = 0,
+        },
+    };
+
+    selector_status st = selector_init(&init);
+    if (st != SELECTOR_SUCCESS) {
+        fprintf(stderr, "selector_init error: %s\n", selector_error(st));
+        exit(EXIT_FAILURE);
+    }
+
+    fd_selector sel = selector_new(MAX_SOCKETS);
+    if (sel == NULL) {
+        fprintf(stderr, "selector_new error\n");
+        selector_close();
+        exit(EXIT_FAILURE);
+    }
+
+    *st_out = st;
+    *selector_out = sel;
+}
+
+int create_listen_socket_ipv6_any(const uint16_t port) {
+    int fd = socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP);
+    if (fd < 0) {
+        printf("socket()");
+        return -1;
+    }
+
+    if (selector_fd_set_nio(fd) == -1) {
+        printf("selector_fd_set_nio(serverSocket)");
+        close(fd);
+        return -1;
+    }
+
+    struct sockaddr_in6 srcSocket;
+    memset(&srcSocket, 0, sizeof(srcSocket));
+    srcSocket.sin6_family = AF_INET6;
+    srcSocket.sin6_port   = htons(port);
+    memcpy(&srcSocket.sin6_addr, &in6addr_any, sizeof(in6addr_any));
+
+    int one = 1;
+    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+
+    if (bind(fd, (struct sockaddr*)&srcSocket, sizeof(srcSocket)) != 0) {
+        printf("bind()");
+        close(fd);
+        return -1;
+    }
+
+    if (listen(fd, MAX_PENDING_CONNECTION_REQUESTS) != 0) {
+        printf("listen()");
+        close(fd);
+        return -1;
+    }
+
+    struct sockaddr_storage boundAddress;
+    socklen_t boundAddressLen = sizeof(boundAddress);
+    if (getsockname(fd, (struct sockaddr*)&boundAddress, &boundAddressLen) >= 0) {
+        char addrBuffer[128];
+        printf("Binding to %s\n", addrBuffer);
+    } else {
+        printf("Failed to getsockname()");
+    }
+
+    return fd;
+}
+
+
+void selector_loop(fd_selector selector) {
+    for (;;) {
+        selector_status st = selector_select(selector);
+        if (st != SELECTOR_SUCCESS) {
+            fprintf(stderr, "selector_select error: %s\n", selector_error(st));
+            break;
+        }
+    }
 }
