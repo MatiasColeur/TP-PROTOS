@@ -182,92 +182,6 @@ static void admin_prepare_ok_msg(struct admin_connection *conn,
     }
 }
 
-/* ----------- IO de requests ----------- */
-
-static bool read_request_header(struct admin_connection *conn) {
-    uint8_t raw_buf[ADMIN_HEADER_SIZE];
-
-    if (!read_exact(conn->fd, raw_buf, ADMIN_HEADER_SIZE)) {
-        return false; // Error de I/O o conexión cerrada
-    }
-
-    // 3. Deserializar: Bytes -> Struct (Maneja ntohs/ntohl internamente)
-    if (admin_deserialize_req(raw_buf, ADMIN_HEADER_SIZE, &conn->req_h) < 0) {
-        return false; // Error de protocolo (buffer muy chico, etc)
-    }
-
-    conn->cmd = (enum admin_cmd)conn->req_h.cmd;
-    
-    conn->req_body_len = conn->req_h.len; 
-
-    return true;
-}
-
-static bool read_request_body(struct admin_connection *conn) {
-    if (conn->req_body_len == 0) {
-        conn->req_body = NULL;
-        return true;
-    }
-
-    // Asignación de memoria
-    conn->req_body = malloc(conn->req_body_len);
-    if (conn->req_body == NULL) {
-        // === Manejo de OOM (Out of Memory) ===
-        // Si no hay memoria, debemos "consumir" los bytes del socket para no desincronizar
-        // el protocolo, aunque luego devolvamos error.
-        uint8_t tmp[256];
-        uint16_t remaining = conn->req_body_len;
-        while (remaining > 0) {
-            size_t chunk = remaining > sizeof(tmp) ? sizeof(tmp) : remaining;
-            if (!read_exact(conn->fd, tmp, chunk)) {
-                break; // Si falla la lectura, cortamos
-            }
-            remaining -= (uint16_t)chunk;
-        }
-        
-        return false;
-    }
-
-    // Lectura del cuerpo
-    // El cuerpo usualmente son datos crudos o strings, no requieren endianness swap
-    // a menos que definas estructuras complejas dentro.
-    if (!read_exact(conn->fd, conn->req_body, conn->req_body_len)) {
-        free(conn->req_body);
-        conn->req_body = NULL;
-        return false;
-    }
-
-    return true;
-}
-
-static bool send_response(struct admin_connection *conn) {
-    uint8_t header_buf[ADMIN_HEADER_SIZE];
-    uint8_t *p = header_buf;
-    uint32_t net_id = htonl(conn->resp_h.id);
-    memcpy(p, &net_id, 4);
-    p += 4;
-
-    *p++ = conn->resp_h.status;
-
-    uint16_t net_len = htons(conn->resp_h.len);
-    memcpy(p, &net_len, 2);
-    p += 2;
-
-    // === ENVIAR HEADER ===
-    if (!write_exact(conn->fd, header_buf, ADMIN_HEADER_SIZE)) {
-        return false;
-    }
-
-    // === ENVIAR BODY ===
-    if (conn->resp_h.len > 0 && conn->resp_body != NULL) {
-        if (!write_exact(conn->fd, conn->resp_body, conn->resp_h.len)) {
-            return false;
-        }
-    }
-
-    return true;
-}
-
 /* ----------- Procesamiento de comandos ----------- */
 
 static void process_metrics_request(struct admin_connection *conn) {
@@ -690,52 +604,6 @@ static void register_acceptor_or_exit(fd_selector selector, int server_fd) {
     }
 }
 
-/* ----------- Manejo de un admin ----------- */
-
-static void handle_admin_client(int client_fd) {
-    struct admin_connection conn;
-    memset(&conn, 0, sizeof(conn));
-    conn.fd = client_fd;
-
-    for (;;) {
-        if (!read_request_header(&conn)) {
-            break; // cierre o error
-        }
-
-        printf("[INF] Request cmd=0x%02X len=%u\n",
-               conn.cmd, conn.req_body_len);
-
-        conn.req_body  = NULL;
-        conn.resp_body = NULL;
-
-        if (!read_request_body(&conn)) {
-            if (conn.req_body) free(conn.req_body);
-            break;
-        }
-
-        process_request(&conn);
-
-        if (!send_response(&conn)) {
-            if (conn.req_body)  free(conn.req_body);
-            if (conn.resp_body) free(conn.resp_body);
-            break;
-        }
-
-        if (conn.req_body) {
-            free(conn.req_body);
-            conn.req_body = NULL;
-        }
-        if (conn.resp_body) {
-            free(conn.resp_body);
-            conn.resp_body = NULL;
-        }
-
-        if (conn.cmd == ADMIN_QUIT) {
-            printf("[INF] Admin sent QUIT\n");
-            break;
-        }
-    }
-}
 
 static void api_read(struct selector_key *key) {
     struct admin_connection *conn = (struct admin_connection *)key->data;
@@ -1073,29 +941,5 @@ finally:
     args_destroy(&args, &API_CFG);
     
     print_info("Server shut down cleanly.\n");
-    return 0;
-
-
-    // int server_fd = create_server_socket(listen_addr, listen_port);
-    // for (;;) {
-    //     struct sockaddr_storage client_addr;
-    //     socklen_t client_len = sizeof(client_addr);
-
-    //     int client = accept(server_fd, (struct sockaddr *)&client_addr, &client_len);
-    //     if (client < 0) {
-    //         perror("accept");
-    //         continue;
-    //     }
-
-    //     printf("[INF] New admin connection (fd=%d)\n", client);
-
-    //     handle_admin_client(client);
-
-    //     printf("[INF] Closing admin connection (fd=%d)\n", client);
-    //     close(client);
-    // }
-
-    // close(server_fd);
-    // args_destroy(&args, &API_CFG);
     return 0;
 }
