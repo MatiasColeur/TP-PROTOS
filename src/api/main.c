@@ -150,8 +150,8 @@ static void admin_prepare_ok_uint64(struct admin_connection *conn,
 
     conn->resp_h.id     = conn->req_h.id;
     conn->resp_h.status = 0;
-    conn->resp_h.len    = htons((uint16_t)len);
-
+    conn->resp_h.len    = (uint16_t)len;
+    
     conn->resp_body_len = (uint16_t)len;
     conn->resp_body     = malloc(conn->resp_body_len);
     if (conn->resp_body == NULL) {
@@ -167,7 +167,7 @@ static void admin_prepare_ok_msg(struct admin_connection *conn,
 
     conn->resp_h.id     = conn->req_h.id;
     conn->resp_h.status = 0;
-    conn->resp_h.len    = htons((uint16_t)msg_len);
+    conn->resp_h.len    = (uint16_t)msg_len;
 
     conn->resp_body_len = (uint16_t)msg_len;
     conn->resp_body     = NULL;
@@ -718,7 +718,6 @@ static void api_read(struct selector_key *key) {
 
 close_conn:
     selector_unregister_fd(key->s, key->fd);
-    print_error("Close en read");
 }
 
 static void api_write(struct selector_key *key) {
@@ -781,8 +780,6 @@ static void api_write(struct selector_key *key) {
 
 close_conn:
     selector_unregister_fd(key->s, key->fd);
-    print_error("Close en write");
-
 }
 
 static void api_close(struct selector_key *key) {
@@ -925,7 +922,7 @@ int main(int argc, const char *argv[]) {
             // Verificamos si salimos por la señal (done = 1) antes de reportar error
             if (done) break; 
             
-            fprintf(stderr, "[ERR] selector_select failed: %s\n", selector_error(ss));
+            print_error("selector_select failed: %s\n", selector_error(ss));
             break;
         }
     }
