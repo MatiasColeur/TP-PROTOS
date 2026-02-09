@@ -987,39 +987,53 @@ static void relay_on_arrival(const unsigned state, struct selector_key *key) {
 
 static unsigned relay_on_read(struct selector_key *key) {
     socks5_connection_ptr conn = ATTACHMENT(key);
+
     buffer *b_read;
     int other_fd;
 
-    // 1. Identificar quién envía datos (Origen) y quién los recibe (Destino)
+    // Determinar origen y destino
     if (key->fd == conn->client_fd) {
-        b_read = &conn->client_read_buf;
+        b_read   = &conn->client_read_buf;
         other_fd = conn->remote_fd;
     } else {
-        b_read = &conn->remote_read_buf;
+        b_read   = &conn->remote_read_buf;
         other_fd = conn->client_fd;
     }
 
-    // 2. Intentar leer del socket origen
+    // Leer del origen
     size_t size;
     uint8_t *ptr = buffer_write_ptr(b_read, &size);
     ssize_t n = recv(key->fd, ptr, size, 0);
 
     if (n > 0) {
-        // Success
         buffer_write_adv(b_read, n);
 
-        // Set write in the other socket
-        selector_set_interest(key->s, other_fd, OP_WRITE | OP_READ);
+        // ===== WRITE OPTIMISTA =====
+        size_t wsize;
+        uint8_t *wptr = buffer_read_ptr(b_read, &wsize);
 
+        ssize_t wn = send(other_fd, wptr, wsize, MSG_NOSIGNAL);
+
+        if (wn > 0) {
+            buffer_read_adv(b_read, wn);
+        }
+
+        // ¿Quedaron datos sin enviar?
+        if (buffer_can_read(b_read)) {
+            selector_set_interest(key->s, other_fd, OP_WRITE | OP_READ);
+        }
+
+        // Si el buffer se llenó, pausar lectura
         if (!buffer_can_write(b_read)) {
-            selector_set_interest_key(key, OP_NOOP); // Simplificación: pausar lectura
+            selector_set_interest_key(key, OP_NOOP);
         }
 
     } else if (n == 0) {
         // EOF
         shutdown(other_fd, SHUT_WR);
-        
+
         selector_set_interest_key(key, OP_NOOP);
+
         if (key->fd == conn->client_fd) conn->client_closed = true;
         else conn->remote_closed = true;
 
@@ -1027,12 +1041,12 @@ static unsigned relay_on_read(struct selector_key *key) {
             return SOCKS5_DONE;
         }
 
-    }else if (errno == ECONNRESET) {
+    } else {
+        if (errno == ECONNRESET) {
             printf("[INF] Connection reset by peer\n");
-            return SOCKS5_DONE; 
+            return SOCKS5_DONE;
         }
-     else {
-        // ERROR: recv got -1
+
         if (errno != EAGAIN && errno != EWOULDBLOCK) {
             log_print_error("Error en túnel recv: %s", strerror(errno));
             return SOCKS5_DONE;
@@ -1042,28 +1056,32 @@ static unsigned relay_on_read(struct selector_key *key) {
     return SOCKS5_RELAY;
 }
 
+
 static unsigned relay_on_write(struct selector_key *key) {
     socks5_connection_ptr conn = ATTACHMENT(key);
+
     buffer *b_write;
     int other_fd;
 
+    // Determinar buffer a enviar
     if (key->fd == conn->client_fd) {
-        b_write = &conn->remote_read_buf;
+        b_write  = &conn->remote_read_buf;
         other_fd = conn->remote_fd;
     } else {
-        b_write = &conn->client_read_buf;
+        b_write  = &conn->client_read_buf;
         other_fd = conn->client_fd;
     }
 
     size_t size;
     uint8_t *ptr = buffer_read_ptr(b_write, &size);
+
     ssize_t n = send(key->fd, ptr, size, MSG_NOSIGNAL);
     log_bytes((uint64_t)n);
 
     if (n > 0) {
         buffer_read_adv(b_write, n);
-        selector_set_interest(key->s, other_fd, OP_READ | OP_WRITE); // Activamos lectura en origen
 
+        // Si ya no queda nada por enviar → dejar de escuchar OP_WRITE
         if (!buffer_can_read(b_write)) {
             selector_set_interest_key(key, OP_READ);
         }
@@ -1077,6 +1095,7 @@ static unsigned relay_on_write(struct selector_key *key) {
 
     return SOCKS5_RELAY;
 }
+
 
 /* -------- SOCKS5_DONE state handlers --------*/
 
