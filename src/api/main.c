@@ -57,21 +57,31 @@ typedef enum {
 
 /* ----------- Protocolo ----------- */
 
+/* Modifica tu struct admin_connection en el .c */
 struct admin_connection {
-    int fd; // socket del admin
-
+    int fd;
     api_state_t state;
 
+    // --- Buffers de Entrada (Request) ---
     struct admin_req_header  req_h;
-    struct admin_resp_header resp_h;
-
-    uint8_t *req_body;
-    uint8_t *resp_body;
-
-    uint16_t req_body_len;
-    uint16_t resp_body_len;
+    uint8_t raw_header_buf[ADMIN_HEADER_SIZE]; // Buffer temporal para los 7 bytes del header
+    size_t  req_header_read_bytes;             // Cuántos bytes del header llevo leídos (0..7)
+    
+    uint8_t *req_body;                         // Buffer dinámico del body
+    uint16_t req_body_len;                     // Longitud total esperada
+    size_t   req_body_read_bytes;              // Cuántos bytes del body llevo leídos
 
     enum admin_cmd cmd;
+
+    // --- Buffers de Salida (Response) ---
+    struct admin_resp_header resp_h;
+    uint8_t raw_resp_header_buf[ADMIN_HEADER_SIZE]; // Buffer serializado del header a enviar
+    
+    uint8_t *resp_body;                        // Buffer con la respuesta
+    uint16_t resp_body_len;
+    
+    size_t   write_offset;                     // Cursor general para escritura (Header + Body)
+    bool     header_sent;                      // Flag para saber si ya mandé el header
 };
 
 static void api_read(struct selector_key *key);
@@ -101,83 +111,6 @@ static const struct fd_handler api_passive_handler = {
     .handle_close  = NULL, 
     .handle_block  = NULL,
 };
-
-static void api_read(struct selector_key *key) {
-    struct admin_connection *conn = (struct admin_connection *)key->data;
-    // TODO: Implementar lectura no bloqueante aquí
-    printf("[DEBUG] Datos disponibles para leer en fd %d\n", key->fd);
-    
-    // Ejemplo temporal para evitar loop infinito en el selector si no lees nada:
-    char buf[1024];
-    ssize_t n = recv(key->fd, buf, sizeof(buf), 0);
-    if (n <= 0) {
-        selector_unregister_fd(key->s, key->fd);
-        close(key->fd);
-        free(conn);
-    }
-}
-
-static void api_write(struct selector_key *key) {
-    // struct admin_connection *conn = (struct admin_connection *)key->data;
-    // TODO: Implementar escritura no bloqueante aquí
-}
-
-static void api_close(struct selector_key *key) {
-    struct admin_connection *conn = (struct admin_connection *)key->data;
-    // Liberar recursos al cerrar
-    if (conn) {
-        if (conn->req_body) free(conn->req_body);
-        if (conn->resp_body) free(conn->resp_body);
-        free(conn);
-    }
-    close(key->fd);
-    printf("[INF] Connection closed (fd %d)\n", key->fd);
-}
-
-
-void api_passive_accept(struct selector_key *key) {
-    struct sockaddr_storage client_addr;
-    socklen_t client_addr_len = sizeof(client_addr);
-    
-    // Aceptar conexión entrante
-    int client_fd = accept(key->fd, (struct sockaddr *)&client_addr, &client_addr_len);
-    
-    if (client_fd == -1) {
-        if (errno != EAGAIN && errno != EWOULDBLOCK) {
-            perror("accept");
-        }
-        return;
-    }
-
-    // Configurar cliente como NO BLOQUEANTE
-    if (selector_fd_set_nio(client_fd) == -1) {
-        perror("selector_fd_set_nio client");
-        close(client_fd);
-        return;
-    }
-
-    // Crear estado para este cliente
-    struct admin_connection *state = malloc(sizeof(struct admin_connection));
-    if (state == NULL) {
-        close(client_fd);
-        return;
-    }
-    memset(state, 0, sizeof(*state));
-    state->fd = client_fd;
-    
-
-    // Registrar el NUEVO cliente en el selector
-    selector_status ss = selector_register(key->s, client_fd, &api_handlers, OP_READ, state);
-
-    if (ss != SELECTOR_SUCCESS) {
-        perror("selector_register client");
-        free(state);
-        close(client_fd);
-        return;
-    }
-    
-    print_info("New admin connection registered (fd=%d)\n", client_fd);
-}
 
 
 /* ----------- Helpers de respuesta ----------- */
@@ -804,6 +737,255 @@ static void handle_admin_client(int client_fd) {
     }
 }
 
+static void api_read(struct selector_key *key) {
+    struct admin_connection *conn = (struct admin_connection *)key->data;
+    ssize_t n;
+
+    // MÁQUINA DE ESTADOS DE LECTURA
+
+    switch (conn->state) {
+        
+        case API_STATE_READ_HEADER:
+            // Intentamos leer lo que falta para completar los 7 bytes del header
+            n = recv(key->fd, 
+                     conn->raw_header_buf + conn->req_header_read_bytes, 
+                     ADMIN_HEADER_SIZE - conn->req_header_read_bytes, 
+                     0);
+
+            if (n == 0) goto close_conn;
+            if (n < 0) {
+                if (errno == EAGAIN || errno == EWOULDBLOCK) return; // Esperar más datos
+                goto close_conn; // Error real
+            }
+
+            conn->req_header_read_bytes += n;
+
+            // Si completamos el header (7 bytes)
+            if (conn->req_header_read_bytes == ADMIN_HEADER_SIZE) {
+                // Deserializar
+                if (admin_deserialize_req(conn->raw_header_buf, ADMIN_HEADER_SIZE, &conn->req_h) < 0) {
+                     // Error de protocolo
+                     goto close_conn;
+                }
+                
+                conn->cmd = (enum admin_cmd)conn->req_h.cmd;
+                conn->req_body_len = conn->req_h.len;
+
+                // Transición de estado
+                if (conn->req_body_len > 0) {
+                    // Preparar lectura de body
+                    conn->req_body = malloc(conn->req_body_len);
+                    if (conn->req_body == NULL) goto close_conn; // OOM
+                    conn->req_body_read_bytes = 0;
+                    conn->state = API_STATE_READ_BODY;
+                    // Intentamos leer inmediatamente por si los datos ya vinieron pegados
+                    api_read(key); 
+                } else {
+                    // No hay body, pasamos a procesar
+                    conn->req_body = NULL;
+                    conn->state = API_STATE_PROCESS;
+                    api_read(key); // Llamada recursiva para procesar ya mismo
+                }
+            }
+            break;
+
+        case API_STATE_READ_BODY:
+            n = recv(key->fd, 
+                     conn->req_body + conn->req_body_read_bytes, 
+                     conn->req_body_len - conn->req_body_read_bytes, 
+                     0);
+
+            if (n == 0) goto close_conn;
+            if (n < 0) {
+                if (errno == EAGAIN || errno == EWOULDBLOCK) return;
+                goto close_conn;
+            }
+
+            conn->req_body_read_bytes += n;
+
+            if (conn->req_body_read_bytes == conn->req_body_len) {
+                conn->state = API_STATE_PROCESS;
+                api_read(key);
+            }
+            break;
+
+        case API_STATE_PROCESS:
+            process_request(conn);
+
+            
+            {
+                uint8_t *p = conn->raw_resp_header_buf;
+                
+                // ID
+                uint32_t net_id = htonl(conn->resp_h.id);
+                memcpy(p, &net_id, 4);
+                p += 4;
+
+                // Status
+                *p++ = conn->resp_h.status;
+
+                // Len
+                uint16_t net_len = htons(conn->resp_h.len);
+                memcpy(p, &net_len, 2);
+                p += 2;
+            }
+
+
+            // 3. Preparar para escribir
+            conn->state = API_STATE_WRITE;
+            conn->write_offset = 0;
+            conn->header_sent = false;
+
+            // 4. Cambiar interés del selector a WRITE
+            selector_set_interest(key->s, key->fd, OP_WRITE);
+            
+            // 5. Intentar escribir inmediatamente
+            api_write(key);
+            break;
+
+        default:
+            break;
+    }
+    return;
+
+close_conn:
+    selector_unregister_fd(key->s, key->fd);
+    print_error("Close en read");
+}
+
+static void api_write(struct selector_key *key) {
+    struct admin_connection *conn = (struct admin_connection *)key->data;
+    ssize_t n;
+
+    if (conn->state != API_STATE_WRITE) return;
+
+    if (!conn->header_sent) {
+        size_t remaining = ADMIN_HEADER_SIZE - conn->write_offset;
+        n = send(key->fd, conn->raw_resp_header_buf + conn->write_offset, remaining, MSG_NOSIGNAL);
+
+        if (n == -1) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK) return;
+            goto close_conn;
+        }
+        conn->write_offset += n;
+
+        if (conn->write_offset == ADMIN_HEADER_SIZE) {
+            conn->header_sent = true;
+            conn->write_offset = 0; // Reiniciar offset para usarlo en el body
+        } else {
+            return; // Falta enviar parte del header
+        }
+    }
+
+    if (conn->header_sent && conn->resp_h.len > 0) {
+        size_t remaining = conn->resp_h.len - conn->write_offset;
+        n = send(key->fd, conn->resp_body + conn->write_offset, remaining, MSG_NOSIGNAL);
+
+        if (n == -1) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK) return;
+            goto close_conn;
+        }
+        conn->write_offset += n;
+
+        if (conn->write_offset < conn->resp_h.len) {
+            return; // Falta enviar parte del body
+        }
+    }
+
+    // FASE 3: Finalización de la respuesta
+    // Limpiamos memoria de la request/response actual
+    if (conn->req_body) { free(conn->req_body); conn->req_body = NULL; }
+    if (conn->resp_body) { free(conn->resp_body); conn->resp_body = NULL; }
+
+    // Chequear si era comando de salida
+    if (conn->cmd == ADMIN_QUIT) {
+        conn->state = API_STATE_CLOSE;
+        goto close_conn;
+    }
+
+    // Keep-Alive: Volver a esperar un Request
+    conn->state = API_STATE_READ_HEADER;
+    conn->req_header_read_bytes = 0;
+    
+    // Cambiar interés a READ
+    selector_set_interest(key->s, key->fd, OP_READ);
+    return;
+
+close_conn:
+    selector_unregister_fd(key->s, key->fd);
+    print_error("Close en write");
+
+}
+
+static void api_close(struct selector_key *key) {
+    struct admin_connection *conn = (struct admin_connection *)key->data;
+    if (conn == NULL) return;
+
+    if (conn->req_body) { 
+        free(conn->req_body); 
+        conn->req_body = NULL; 
+    }
+    if (conn->resp_body) { 
+        free(conn->resp_body); 
+        conn->resp_body = NULL; 
+    }
+
+    free(conn);
+    key->data = NULL; 
+
+    // Cerrar el socket real
+    if (key->fd != -1) {
+        close(key->fd);
+    }
+    printf("[INF] Connection closed (fd %d)\n", key->fd);
+}
+
+
+void api_passive_accept(struct selector_key *key) {
+    struct sockaddr_storage client_addr;
+    socklen_t client_addr_len = sizeof(client_addr);
+    
+    // Aceptar conexión entrante
+    int client_fd = accept(key->fd, (struct sockaddr *)&client_addr, &client_addr_len);
+    
+    if (client_fd == -1) {
+        if (errno != EAGAIN && errno != EWOULDBLOCK) {
+            perror("accept");
+        }
+        return;
+    }
+
+    // Configurar cliente como NO BLOQUEANTE
+    if (selector_fd_set_nio(client_fd) == -1) {
+        perror("selector_fd_set_nio client");
+        close(client_fd);
+        return;
+    }
+
+    // Crear estado para este cliente
+    struct admin_connection *state = malloc(sizeof(struct admin_connection));
+    if (state == NULL) {
+        close(client_fd);
+        return;
+    }
+    memset(state, 0, sizeof(*state));
+    state->fd = client_fd;
+    
+
+    // Registrar el NUEVO cliente en el selector
+    selector_status ss = selector_register(key->s, client_fd, &api_handlers, OP_READ, state);
+
+    if (ss != SELECTOR_SUCCESS) {
+        perror("selector_register client");
+        free(state);
+        close(client_fd);
+        return;
+    }
+    
+    print_info("New admin connection registered (fd=%d)\n", client_fd);
+}
+
+
 /* ----------- main ----------- */
 
 int main(int argc, const char *argv[]) {
@@ -868,8 +1050,17 @@ int main(int argc, const char *argv[]) {
     // 7. Bucle Principal (Event Loop)
     print_info("Admin API serving on port %d (Non-blocking mode)\n", listen_port);
     
-    selector_loop(selector);
+    while (!done) {
+        selector_status ss = selector_select(selector);
 
+        if (ss != SELECTOR_SUCCESS) {
+            // Verificamos si salimos por la señal (done = 1) antes de reportar error
+            if (done) break; 
+            
+            fprintf(stderr, "[ERR] selector_select failed: %s\n", selector_error(ss));
+            break;
+        }
+    }
 
 destroy_selector:
     if (selector != NULL) {
