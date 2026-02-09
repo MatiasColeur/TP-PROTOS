@@ -26,6 +26,11 @@ struct admin_resp_header {
     uint16_t len;
 } __attribute__((packed));
 
+typedef enum {
+    ROLE_USER  = 0x00,
+    ROLE_ADMIN = 0x01,
+} client_role;
+
 enum admin_cmd {
     /**
      * @brief get metrics methods

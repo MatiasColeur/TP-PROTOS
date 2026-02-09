@@ -54,11 +54,6 @@ enum socks_reply_status {
     STATUS_ADDRESS_TYPE_NOT_SUPPORTED = 0x08,
 };
 
-typedef enum {
-    ROLE_USER  = 0x00,
-    ROLE_ADMIN = 0x01,
-} client_role;
-
 void handle_new_client(fd_selector selector, int client_fd);
 void socks5_set_management_endpoint(const char *addr, uint16_t port);
 uint8_t errno_to_socks_status(int err);
