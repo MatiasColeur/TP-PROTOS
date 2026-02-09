@@ -25,18 +25,20 @@ static void usage(const char *prog) {
     fprintf(stderr,
         "Usage: %s [OPTIONS]\n"
         "\n"
-        "Options (choose one or more):\n"
+        "Options (choose one or more stats):\n"
         "  -H            Get historical connections\n"
         "  -C            Get concurrent connections\n"
         "  -B            Get bytes transferred\n"
         "  -U <user>     Get connections/log lines for <user>\n"
+        "  -A <addr>     Address where the Admin API is listening (default: %s)\n"
+        "  -P <port>     Port where the Admin API is listening (default: %u)\n"
         "  -h            Help\n"
         "\n"
         "Examples:\n"
         "  %s -H\n"
         "  %s -C -B\n"
-        "  %s -U admin\n",
-        prog, prog, prog, prog
+        "  %s -U admin -A ::1 -P 8080\n",
+        prog, API_ADDR, (unsigned)ADMIN_API_PORT, prog, prog, prog
     );
 }
 
@@ -45,14 +47,26 @@ int main(int argc, char *argv[]) {
     bool want_conc  = false;
     bool want_bytes = false;
     const char *user = NULL;
+    const char *api_addr = API_ADDR;
+    uint16_t api_port = API_PORT;
 
     int opt;
-    while ((opt = getopt(argc, argv, "HCBU:h")) != -1) {
+    while ((opt = getopt(argc, argv, "HCBU:hA:P:")) != -1) {
         switch (opt) {
             case 'H': want_hist = true; break;
             case 'C': want_conc = true; break;
             case 'B': want_bytes = true; break;
             case 'U': user = optarg; break;
+            case 'A': api_addr = optarg; break;
+            case 'P': {
+                int parsed = atoi(optarg);
+                if (parsed <= 0 || parsed > 65535) {
+                    fprintf(stderr, "[ADMIN] Invalid API port: %s\n", optarg);
+                    return 1;
+                }
+                api_port = (uint16_t) parsed;
+                break;
+            }
             case 'h':
             default:
                 usage(argv[0]);
@@ -72,8 +86,8 @@ int main(int argc, char *argv[]) {
 
     perform_handshake(sockfd, "admin", "admin");
 
-    // CONNECT a la API fija via IPv6 literal
-    perform_request_ipv6(sockfd, API_ADDR, API_PORT);
+    // CONNECT a la API configurable
+    perform_request_ipv6(sockfd, api_addr, api_port);
 
     uint32_t id = 1;
 

@@ -169,6 +169,12 @@ static void process_user_mgmt_request(struct admin_connection *conn) {
     client_role parsed_role = ROLE_USER;
     int ok;
 
+    if (!user_store_reload_if_modified(USER_DB_PATH)) {
+        free(body);
+        admin_prepare_error(conn, 1, "user_db_reload_failed");
+        return;
+    }
+
     switch (conn->cmd) {
 
     // SET_USER_ROLE: "username role"

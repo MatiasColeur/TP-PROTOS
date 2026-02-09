@@ -56,7 +56,7 @@ admin,fb001dfcffd1c899f3297871406242f097aecf1a5342ccf3ebcd116146188e4b
 ```
 
 (user:admin, pass:admin)
-Sin este archivo, la API no podrá levantar correctamente la base de usuarios. No se debe modificar el archivo `users.csv` durante la ejecución de la api ya que esta tiene una copia en memoria.
+Sin este archivo, la API no podrá levantar correctamente la base de usuarios. La API mapea `users.csv`, verifica su `mtime` antes de ejecutar comandos de administración y recarga automáticamente cualquier modificación que se haga sobre el archivo en el sistema de archivos.
 
 ---
 
@@ -123,6 +123,7 @@ Todos los binarios soportan `-h` para ver opciones completas y valores por defec
 * `-p <SOCKS port>` Puerto del proxy
 * `-L <MNG addr>` Dirección de la API de management
 * `-P <MNG port>` Puerto de la API
+  * `-P` también controla el puerto al que el servidor intenta llegar mediante CONNECT cuando coloca un túnel hacia la API a través del proxy (y lo respeta tanto `bootstrap` como las rutinas de gestión).
 * `-u <user:pass>` Usuarios iniciales
 * `-N` Deshabilita dissectors
 * `-v` Versión
@@ -231,6 +232,8 @@ Clientes simples para validar handshake, auth y CONNECT.
 * `-C` Conexiones concurrentes
 * `-B` Bytes transferidos
 * `-U <user>` Logs/conexiones de un usuario
+* `-A <addr>` Host donde escucha la API de administración (por defecto `::1`)
+* `-P <port>` Puerto donde escucha la API (por defecto `8080`). Úsalo si la API se ejecuta en otro puerto, por ejemplo `./bin/admin_metrics -P 8081`.
 
 **Ejemplos**
 

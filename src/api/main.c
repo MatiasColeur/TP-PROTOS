@@ -30,7 +30,15 @@ static void sigterm_handler(const int signal) {
 
 static const ArgParserConfig API_CFG = {
     .version_str = "Admin API v1.0",
-    .help_str = "Usage: %s [OPTIONS]\n...",
+    .help_str =
+        "Usage: %s [OPTIONS]\n"
+        "\n"
+        "Options:\n"
+        "  -h             Imprime esta ayuda / termina.\n"
+        "  -v             Imprime la versión y termina.\n"
+        "  -l <addr>      Escucha con la dirección indicada (IPv6 preferido).\n"
+        "                 Por defecto ::1 (loopback IPv6).\n"
+        "  -p <port>      Puerto TCP donde se expone la API (default: 8080).\n",
     .def_socks_addr = LOOPBACK_IPV6,
     .def_socks_port = ADMIN_API_PORT,
     .def_aux_addr = NULL, .def_aux_port = 0,

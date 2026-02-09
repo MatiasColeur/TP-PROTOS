@@ -21,5 +21,6 @@ bool user_store_delete(const char *user);
 const user_record *user_store_find(const char *user);     
 size_t user_store_list(user_record *out, size_t max_out); 
 void user_store_close(void);                               
+bool user_store_reload_if_modified(const char *csv_path);
 
 #endif
