@@ -18,6 +18,7 @@
 #include "../../include/auth.h"
 #include "../../include/parser_arguments.h"
 #include "../../include/util.h"
+#include "../../include/selector.h"
 
 #define BACKLOG        5
 
@@ -43,11 +44,23 @@ static const ArgParserConfig API_CFG = {
 };
 
 
+/*------------ Estados del Selector -------------*/
+typedef enum {
+    API_STATE_READ_HEADER,  // Esperando los 7 bytes del header
+    API_STATE_READ_BODY,    // Esperando N bytes del payload (si len > 0)
+    API_STATE_PROCESS,      // Tengo todo, ejecutar comando (transición inmediata)
+    API_STATE_WRITE,        // Tengo respuesta en buffer, intentando enviarla
+    API_STATE_CLOSE,        // Enviar bytes restantes y cerrar (para QUIT)
+    API_STATE_ERROR         // Hubo error, cerrar forzosamente
+} api_state_t;
+
 
 /* ----------- Protocolo ----------- */
 
 struct admin_connection {
     int fd; // socket del admin
+
+    api_state_t state;
 
     struct admin_req_header  req_h;
     struct admin_resp_header resp_h;
@@ -60,6 +73,112 @@ struct admin_connection {
 
     enum admin_cmd cmd;
 };
+
+static void api_read(struct selector_key *key);
+static void api_write(struct selector_key *key);
+static void api_close(struct selector_key *key);
+
+static bool done = false; // Bandera global para detener el servidor limpiamente
+
+static void sigterm_handler(const int signal) {
+    printf("[INF] Signal %d received, cleaning up and exiting...\n", signal);
+    done = true;
+}
+
+// Prototipo de la función que acepta conexiones (la definimos abajo o en api_service.c)
+void api_passive_accept(struct selector_key *key);
+
+static const struct fd_handler api_handlers = {
+    .handle_read   = api_read,
+    .handle_write  = api_write,
+    .handle_close  = api_close,
+    .handle_block  = NULL,
+};
+
+static const struct fd_handler api_passive_handler = {
+    .handle_read   = api_passive_accept,
+    .handle_write  = NULL,
+    .handle_close  = NULL, 
+    .handle_block  = NULL,
+};
+
+static void api_read(struct selector_key *key) {
+    struct admin_connection *conn = (struct admin_connection *)key->data;
+    // TODO: Implementar lectura no bloqueante aquí
+    printf("[DEBUG] Datos disponibles para leer en fd %d\n", key->fd);
+    
+    // Ejemplo temporal para evitar loop infinito en el selector si no lees nada:
+    char buf[1024];
+    ssize_t n = recv(key->fd, buf, sizeof(buf), 0);
+    if (n <= 0) {
+        selector_unregister_fd(key->s, key->fd);
+        close(key->fd);
+        free(conn);
+    }
+}
+
+static void api_write(struct selector_key *key) {
+    // struct admin_connection *conn = (struct admin_connection *)key->data;
+    // TODO: Implementar escritura no bloqueante aquí
+}
+
+static void api_close(struct selector_key *key) {
+    struct admin_connection *conn = (struct admin_connection *)key->data;
+    // Liberar recursos al cerrar
+    if (conn) {
+        if (conn->req_body) free(conn->req_body);
+        if (conn->resp_body) free(conn->resp_body);
+        free(conn);
+    }
+    close(key->fd);
+    printf("[INF] Connection closed (fd %d)\n", key->fd);
+}
+
+
+void api_passive_accept(struct selector_key *key) {
+    struct sockaddr_storage client_addr;
+    socklen_t client_addr_len = sizeof(client_addr);
+    
+    // Aceptar conexión entrante
+    int client_fd = accept(key->fd, (struct sockaddr *)&client_addr, &client_addr_len);
+    
+    if (client_fd == -1) {
+        if (errno != EAGAIN && errno != EWOULDBLOCK) {
+            perror("accept");
+        }
+        return;
+    }
+
+    // Configurar cliente como NO BLOQUEANTE
+    if (selector_fd_set_nio(client_fd) == -1) {
+        perror("selector_fd_set_nio client");
+        close(client_fd);
+        return;
+    }
+
+    // Crear estado para este cliente
+    struct admin_connection *state = malloc(sizeof(struct admin_connection));
+    if (state == NULL) {
+        close(client_fd);
+        return;
+    }
+    memset(state, 0, sizeof(*state));
+    state->fd = client_fd;
+    
+
+    // Registrar el NUEVO cliente en el selector
+    selector_status ss = selector_register(key->s, client_fd, &api_handlers, OP_READ, state);
+
+    if (ss != SELECTOR_SUCCESS) {
+        perror("selector_register client");
+        free(state);
+        close(client_fd);
+        return;
+    }
+    
+    print_info("New admin connection registered (fd=%d)\n", client_fd);
+}
+
 
 /* ----------- Helpers de respuesta ----------- */
 
@@ -630,6 +749,14 @@ static int create_server_socket(const char *listen_addr, uint16_t port) {
 }
 
 
+static void register_acceptor_or_exit(fd_selector selector, int server_fd) {
+    selector_status st = selector_register(selector, server_fd, &api_passive_handler, OP_READ, NULL);
+    if (st != SELECTOR_SUCCESS) {
+        fprintf(stderr, "selector_register(serverSocket) error: %s\n", selector_error(st));
+        exit(EXIT_FAILURE);
+    }
+}
+
 /* ----------- Manejo de un admin ----------- */
 
 static void handle_admin_client(int client_fd) {
@@ -681,6 +808,8 @@ static void handle_admin_client(int client_fd) {
 
 int main(int argc, const char *argv[]) {
     signal(SIGPIPE, SIG_IGN);
+    signal(SIGTERM, sigterm_handler);
+    signal(SIGINT, sigterm_handler);
 
     ProgramArgs args;
     if (parse_arguments_ex(argc, argv, &args, &API_CFG) < 0) {
@@ -703,25 +832,79 @@ int main(int argc, const char *argv[]) {
 
     int server_fd = create_server_socket(listen_addr, listen_port);
 
-    for (;;) {
-        struct sockaddr_storage client_addr;
-        socklen_t client_len = sizeof(client_addr);
-
-        int client = accept(server_fd, (struct sockaddr *)&client_addr, &client_len);
-        if (client < 0) {
-            perror("accept");
-            continue;
+    // === DIAGNÓSTICO DEL ERROR ===
+    if (server_fd == -1) {
+        // Si entra aquí, el problema NO es el selector, es que no pudiste abrir el puerto
+        print_error("No se pudo crear el socket en el puerto %d. Error: %s\n", 
+                listen_port, strerror(errno));
+        
+        // Pista común: Puerto ocupado
+        if (errno == EADDRINUSE) {
+            print_error("El puerto ya está en uso. ¿Tienes otro servidor corriendo?\n");
         }
-
-        printf("[INF] New admin connection (fd=%d)\n", client);
-
-        handle_admin_client(client);
-
-        printf("[INF] Closing admin connection (fd=%d)\n", client);
-        close(client);
+        
+        goto finally; // O return EXIT_FAILURE;
+    }
+    
+    // CRÍTICO: Configurar socket como NO BLOQUEANTE para el selector
+    if (selector_fd_set_nio(server_fd) == -1) {
+        perror("selector_fd_set_nio");
+        goto finally;
     }
 
-    close(server_fd);
+    // 5. Inicializar Selector
+    struct selector_init conf = {
+        .signal = SIGALRM,
+        .select_timeout = { .tv_sec = 10, .tv_nsec = 0 }
+    };
+    selector_status st = SELECTOR_SUCCESS;
+    fd_selector selector = NULL;
+    
+    create_selector_or_exit(&st, &selector);
+
+
+    register_acceptor_or_exit( selector, server_fd);
+
+    // 7. Bucle Principal (Event Loop)
+    print_info("Admin API serving on port %d (Non-blocking mode)\n", listen_port);
+    
+    selector_loop(selector);
+
+
+destroy_selector:
+    if (selector != NULL) {
+        selector_destroy(selector);
+    }
+    selector_close();
+
+finally:
+    if (server_fd >= 0) close(server_fd);
     args_destroy(&args, &API_CFG);
+    
+    print_info("Server shut down cleanly.\n");
+    return 0;
+
+
+    // int server_fd = create_server_socket(listen_addr, listen_port);
+    // for (;;) {
+    //     struct sockaddr_storage client_addr;
+    //     socklen_t client_len = sizeof(client_addr);
+
+    //     int client = accept(server_fd, (struct sockaddr *)&client_addr, &client_len);
+    //     if (client < 0) {
+    //         perror("accept");
+    //         continue;
+    //     }
+
+    //     printf("[INF] New admin connection (fd=%d)\n", client);
+
+    //     handle_admin_client(client);
+
+    //     printf("[INF] Closing admin connection (fd=%d)\n", client);
+    //     close(client);
+    // }
+
+    // close(server_fd);
+    // args_destroy(&args, &API_CFG);
     return 0;
 }
