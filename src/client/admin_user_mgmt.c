@@ -9,6 +9,7 @@
 #include "../../include/shared.h"
 #include "../../include/api.h"
 #include "../../include/client_utils.h"
+#include "../../include/logger.h"
 
 /*
  * Fijos (sin CLI):
@@ -86,7 +87,7 @@ static void admin_add_user(int sockfd, uint32_t *id_counter,
     char payload[256];
     int n = snprintf(payload, sizeof(payload), "%s %s %s\n", user, pass, role);
     if (n < 0 || (size_t)n >= sizeof(payload)) {
-        fprintf(stderr, "[ERR] Payload add_user too long\n");
+        print_error("Payload add_user too long\n");
         return;
     }
     admin_send_request(sockfd, (*id_counter)++, ADMIN_ADD_USER, payload);
@@ -98,7 +99,7 @@ static void admin_set_user_role(int sockfd, uint32_t *id_counter,
     char payload[256];
     int n = snprintf(payload, sizeof(payload), "%s %s\n", user, role);
     if (n < 0 || (size_t)n >= sizeof(payload)) {
-        fprintf(stderr, "[ERR] Payload set_user_role too long\n");
+        print_error("Payload set_user_role too long\n");
         return;
     }
     admin_send_request(sockfd, (*id_counter)++, ADMIN_SET_USER_ROLE, payload);
@@ -109,9 +110,10 @@ static void admin_delete_user(int sockfd, uint32_t *id_counter, const char *user
     char payload[256];
     int n = snprintf(payload, sizeof(payload), "%s\n", user);
     if (n < 0 || (size_t)n >= sizeof(payload)) {
-        fprintf(stderr, "[ERR] Payload delete_user too long\n");
+        print_error("Payload delete_user too long\n");
         return;
     }
+    print_info("LLEGO: admin delete user: ", ADMIN_DELETE_USER);
     admin_send_request(sockfd, (*id_counter)++, ADMIN_DELETE_USER, payload);
 }
 
@@ -167,22 +169,22 @@ int main(int argc, char *argv[]) {
 
     if (act == ACT_ADD) {
         if (add_user == NULL || add_role == NULL || !role_is_valid(add_role)) {
-            fprintf(stderr, "[ERR] Invalid -A args. role must be user|admin\n");
+            print_error("Invalid -A args. role must be user|admin\n");
             return 1;
         }
         if (!prompt_password(add_pass_buf, sizeof add_pass_buf)) {
-            fprintf(stderr, "[ERR] No password provided\n");
+            print_error("No password provided\n");
             return 1;
         }
         add_pass = add_pass_buf;
     } else if (act == ACT_ROLE) {
         if (role_user == NULL || role_role == NULL || !role_is_valid(role_role)) {
-            fprintf(stderr, "[ERR] Invalid -R args. role must be user|admin\n");
+            print_error("Invalid -R args. role must be user|admin\n");
             return 1;
         }
     } else if (act == ACT_DEL) {
         if (del_user == NULL) {
-            fprintf(stderr, "[ERR] Invalid -D args\n");
+            print_error("Invalid -D args\n");
             return 1;
         }
     }
