@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
+#include <termios.h>
 #include <unistd.h>
 
 #include "../../include/shared.h"
@@ -26,17 +27,53 @@ static void usage(const char *prog) {
         "Usage: %s ACTION\n"
         "\n"
         "Actions (choose exactly one):\n"
-        "  -A <user> <pass> <role>   Add user (role: user|admin)\n"
+        "  -A <user> <role>          Add user (role: user|admin, password prompted)\n"
         "  -R <user> <role>          Set user role (role: user|admin)\n"
         "  -D <user>                 Delete user\n"
         "  -h                        Help\n"
         "\n"
         "Examples:\n"
-        "  %s -A pepito 1234 user\n"
+        "  %s -A pepito user\n"
         "  %s -R juan admin\n"
         "  %s -D messi\n",
         prog, prog, prog, prog
     );
+}
+
+static bool prompt_password(char *out, size_t len) {
+    if (out == NULL || len == 0) return false;
+
+    struct termios original, raw;
+    if (tcgetattr(STDIN_FILENO, &original) != 0) return false;
+    raw = original;
+    raw.c_lflag &= ~ECHO;
+    if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) != 0) return false;
+
+    char buffer[256] = {0};
+    bool success = false;
+
+    fprintf(stderr, "Password: ");
+    fflush(stderr);
+
+    if (fgets(buffer, sizeof buffer, stdin) != NULL) {
+        size_t newline_pos = strcspn(buffer, "\n");
+        if (buffer[newline_pos] == '\n') {
+            buffer[newline_pos] = '\0';
+        } else {
+            int ch;
+            while ((ch = getchar()) != '\n' && ch != EOF);
+        }
+
+        size_t copy_len = strlen(buffer);
+        if (copy_len >= len) copy_len = len - 1;
+        memcpy(out, buffer, copy_len);
+        out[copy_len] = '\0';
+        success = true;
+    }
+
+    tcsetattr(STDIN_FILENO, TCSAFLUSH, &original);
+    fprintf(stderr, "\n");
+    return success;
 }
 
 static bool role_is_valid(const char *role) {
@@ -86,6 +123,7 @@ int main(int argc, char *argv[]) {
     enum { ACT_NONE, ACT_ADD, ACT_ROLE, ACT_DEL } act = ACT_NONE;
 
     const char *add_user = NULL, *add_pass = NULL, *add_role = NULL;
+    char add_pass_buf[128] = {0};
     const char *role_user = NULL, *role_role = NULL;
     const char *del_user = NULL;
 
@@ -93,11 +131,10 @@ int main(int argc, char *argv[]) {
     while ((opt = getopt(argc, argv, "A:R:D:h")) != -1) {
         switch (opt) {
             case 'A': {
-                // -A consumes 3 args: user pass role
+                // -A consumes 2 args: user role; password read interactively
                 act = ACT_ADD;
                 add_user = optarg;
-                if (optind + 1 >= argc) { usage(argv[0]); return 1; }
-                add_pass = argv[optind++];
+                if (optind >= argc) { usage(argv[0]); return 1; }
                 add_role = argv[optind++];
                 break;
             }
@@ -129,10 +166,15 @@ int main(int argc, char *argv[]) {
     }
 
     if (act == ACT_ADD) {
-        if (add_user == NULL || add_pass == NULL || add_role == NULL || !role_is_valid(add_role)) {
+        if (add_user == NULL || add_role == NULL || !role_is_valid(add_role)) {
             fprintf(stderr, "[ERR] Invalid -A args. role must be user|admin\n");
             return 1;
         }
+        if (!prompt_password(add_pass_buf, sizeof add_pass_buf)) {
+            fprintf(stderr, "[ERR] No password provided\n");
+            return 1;
+        }
+        add_pass = add_pass_buf;
     } else if (act == ACT_ROLE) {
         if (role_user == NULL || role_role == NULL || !role_is_valid(role_role)) {
             fprintf(stderr, "[ERR] Invalid -R args. role must be user|admin\n");
@@ -155,6 +197,7 @@ int main(int argc, char *argv[]) {
 
     if (act == ACT_ADD) {
         admin_add_user(sockfd, &req_id, add_user, add_pass, add_role);
+        memset(add_pass_buf, 0, sizeof add_pass_buf);
     } else if (act == ACT_ROLE) {
         admin_set_user_role(sockfd, &req_id, role_user, role_role);
     } else if (act == ACT_DEL) {

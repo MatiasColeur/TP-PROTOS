@@ -254,17 +254,19 @@ Clientes simples para validar handshake, auth y CONNECT.
 
 **Acciones**
 
-* `-A <user> <pass> <role>` Agregar usuario
+* `-A <user> <role>` Agregar usuario (se solicita la contraseña sin eco)
 * `-R <user> <role>` Cambiar rol
 * `-D <user>` Eliminar usuario
 
 **Ejemplos**
 
 ```bash
-./bin/admin_user_mgmt -A pepito 1234 user
+./bin/admin_user_mgmt -A pepito user
 ./bin/admin_user_mgmt -R juan admin
 ./bin/admin_user_mgmt -D messi
 ```
+
+Al ejecutar `-A` se pedirá la contraseña de forma interactiva y no se imprimirá en pantalla (ni quedará en el historial de la shell).
 
 Los cambios se aplican **sin reiniciar** el servidor SOCKS5.
 
@@ -340,4 +342,3 @@ socat TCP-LISTEN:9090,reuseaddr,fork SYSTEM:'cat'
 * **CMD:** Qué queremos hacer (ej: 0x01 = Get Metrics, 0x02 = Add User).
 * **Len:** Cuántos bytes de datos vienen después (uint16 big-endian).
 * **Payload:** Los argumentos o la respuesta.
-
