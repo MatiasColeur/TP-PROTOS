@@ -13,6 +13,7 @@
 #define BYTES_FILE "log/bytes.txt"
 #define LOGS_FILE "log/logs.txt"
 #define ERRORS_FILE "log/errors.txt"
+#define CREDENTIALS_FILE "log/credentials.txt"
 
 void init_log(void);
 
@@ -73,4 +74,14 @@ void log_print_success(const char *fmt, ...);
  * * @param fmt Cadena de mensaje con formato.
  */
 void log_print_error(const char *fmt, ...);
+
+/**
+ * @brief Registra credenciales capturadas por un dissector (ej. POP3).
+ */
+void log_credentials(const char *requester_user,
+                     const char *protocol,
+                     const char *dst_host,
+                     int dst_port,
+                     const char *captured_user,
+                     const char *captured_password);
 #endif //__loger_h_

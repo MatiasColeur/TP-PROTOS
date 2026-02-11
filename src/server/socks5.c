@@ -1,7 +1,8 @@
 #include "../../include/socks5.h"
+#include "../../include/dissectors.h"
 
 
-#define BUFFER_SIZE         16384 // buffer más grande (16KB) para evitar fragmentación TCP y reducir syscalls
+#define BUFFER_SIZE         4096
 
 #define ADDR_BUFFER_LEN     64
 
@@ -14,6 +15,7 @@
 
 static char management_host[MAX_HOSTNAME_LENGTH + 1] = LOOPBACK_IPV4;
 static uint16_t management_port = ADMIN_API_PORT;
+static bool dissectors_enabled = true;
 
 /**
  * @brief Per-connection state and resources for a SOCKS5 session.
@@ -139,6 +141,13 @@ struct socks5_connection {
      * @brief String-formatted BND.ADDR for the reply. 
      */
     char bnd_addr_str[ADDR_BUFFER_LEN];
+
+/* -------- Dissectors -------- */
+
+    /** 
+     * @brief Per-connection dissector state.
+     */
+    struct dissector_state dissector;
 };
 
 typedef struct socks5_connection * socks5_connection_ptr;
@@ -224,6 +233,8 @@ static unsigned relay_on_write     (struct selector_key *key);
 
 static void     done_on_arrival    (const unsigned state, struct selector_key *key);
 static void     error_on_arrival   (const unsigned state, struct selector_key *key);
+
+/* Dissectors */
 
 
 /**
@@ -595,6 +606,8 @@ static unsigned request_on_read(struct selector_key *key) {
         struct sockaddr_in6 *sa6 = (struct sockaddr_in6 *)&conn->dst_addr;
         sa6->sin6_port = htons(conn->port);
     }
+
+    dissectors_on_request(&conn->dissector, conn->port);
 
     buffer_read_adv(b, required_len);
 
@@ -1006,6 +1019,11 @@ static unsigned relay_on_read(struct selector_key *key) {
     ssize_t n = recv(key->fd, ptr, size, 0);
 
     if (n > 0) {
+        // Success
+        if (key->fd == conn->client_fd) {
+            dissectors_feed(&conn->dissector, ptr, (size_t)n,
+                            conn->username, conn->host, conn->port);
+        }
         buffer_write_adv(b_read, n);
 
         // ===== WRITE OPTIMISTA =====
@@ -1195,6 +1213,7 @@ new_socks5_connection(fd_selector selector, int client_fd) {
     conn->client_fd = client_fd;
     conn->remote_fd = -1;
     conn->selector = selector;
+    dissectors_init(&conn->dissector, dissectors_enabled);
 
     return conn;
 }
@@ -1208,7 +1227,7 @@ socks5_stm_init(socks5_connection_ptr conn) {
     stm_init(&conn->stm);
 }
 
-static void 
+static void
 socks5_buffers_init(socks5_connection_ptr conn) {
     
     buffer_init(&conn->client_read_buf, sizeof(conn->client_read_raw), conn->client_read_raw);
@@ -1272,6 +1291,10 @@ uint8_t errno_to_socks_status(int err) {
         case EADDRNOTAVAIL: return STATUS_ADDRESS_TYPE_NOT_SUPPORTED;
         default:           return STATUS_GENERAL_SERVER_FAILURE;
     }
+}
+
+void socks5_set_dissectors_enabled(bool enabled) {
+    dissectors_enabled = enabled;
 }
 
 void socks5_set_management_endpoint(const char *addr, uint16_t port) {
