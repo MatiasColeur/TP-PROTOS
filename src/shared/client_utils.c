@@ -80,7 +80,7 @@ void perform_handshake(int sockfd, const char *username, const char *password) {
     char buf[BUFFER_SIZE];
     
     // 1. Enviar saludo inicial
-    printf("[Info] Enviando Hello...\n");
+    print_info("Enviando Hello...\n");
     char hello[] = { 0x05, 0x01, 0x02 }; // Ver 5, 1 Metodo, Auth User/Pass (0x02)
     if (send(sockfd, hello, sizeof(hello), 0) < 0) {
         print_error("Error sending Hello");
@@ -90,7 +90,7 @@ void perform_handshake(int sockfd, const char *username, const char *password) {
     // 2. Recibir respuesta de método seleccionado
     ssize_t n = recv(sockfd, buf, BUFFER_SIZE, 0);
     if (n < 2 || buf[1] != 0x02) {
-        fprintf(stderr, "Error: El servidor no aceptó autenticación User/Pass. Recibido: %02x\n", (unsigned char)buf[1]);
+        print_error("El servidor no aceptó autenticación User/Pass. Recibido: %02x\n", (unsigned char)buf[1]);
         exit(1);
     }
 
