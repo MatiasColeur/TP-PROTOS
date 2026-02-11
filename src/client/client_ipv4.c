@@ -20,7 +20,7 @@ static const ArgParserConfig CLIENT_IPV4_CFG = {
     .def_socks_addr = "127.0.0.1",
     .def_socks_port = 1080,
 
-    .def_aux_addr = "142.251.129.142",
+    .def_aux_addr = "142.251.129.14",
     .def_aux_port = 80,
 
     .enable_aux        = true,
