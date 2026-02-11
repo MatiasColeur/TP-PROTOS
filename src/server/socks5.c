@@ -676,6 +676,7 @@ static void * resolution_thread(void *arg) {
         conn->connect_status = errno_to_socks_status(err); 
     } else {
         conn->connect_status = SUCCESS; // 0 success
+        conn->addr_next = conn->addr_list;
     }
     // notify principal thread
     selector_notify_block(key->s, key->fd);
@@ -807,13 +808,27 @@ static unsigned connect_on_block(struct selector_key *key) {
         return SOCKS5_REPLY;
     }
 
-    conn->addr_next = conn->addr_list; 
-
     int sock = -1;
     struct addrinfo *rp;
     //trying to conect to the posibles ips
     for (rp = conn->addr_next; rp != NULL; rp = rp->ai_next) {
         sock = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+
+
+        // --- PREPARAR DATOS PARA LOG (IP y Puerto) ---
+        char ip_str[INET6_ADDRSTRLEN] = "unknown";
+        uint16_t port_log = 0;
+
+        if (rp->ai_family == AF_INET) {
+            struct sockaddr_in *v4 = (struct sockaddr_in *)rp->ai_addr;
+            inet_ntop(AF_INET, &v4->sin_addr, ip_str, sizeof(ip_str));
+            port_log = ntohs(v4->sin_port);
+        } else if (rp->ai_family == AF_INET6) {
+            struct sockaddr_in6 *v6 = (struct sockaddr_in6 *)rp->ai_addr;
+            inet_ntop(AF_INET6, &v6->sin6_addr, ip_str, sizeof(ip_str));
+            port_log = ntohs(v6->sin6_port);
+        }
+
         if (sock == -1) continue;
 
         if (selector_fd_set_nio(sock) == -1) {
@@ -823,14 +838,34 @@ static unsigned connect_on_block(struct selector_key *key) {
 
         if (connect(sock, rp->ai_addr, rp->ai_addrlen) == -1) {
             if (errno == EINPROGRESS) {
-                // success
-                break;
+                conn->addr_next = rp->ai_next; 
+                conn->remote_fd = sock; // Guardamos el FD temporalmente
+                
+                // Registrar interés de escritura para saber cuándo termina el connect
+                selector_status ss = selector_register(key->s, conn->remote_fd, &socks5_handler, OP_WRITE, conn);
+                if (ss != SELECTOR_SUCCESS) {
+                    close(conn->remote_fd);
+                    conn->remote_fd = -1;
+                    print_info("Error interno conectando a %s:%d. Probando siguiente...", ip_str, port_log);
+                    continue; 
+                }
+                return SOCKS5_CONNECT;
             } else {
                 close(sock);
                 sock = -1;
             }
         } else {
-            break;
+            conn->remote_fd = sock;
+            conn->connect_status = SUCCESS;
+            conn->addr_next = rp->ai_next; // Por si acaso
+            
+            // Registramos el socket remoto (aunque ya conectó, pasamos a REPLY)
+            selector_status ss = selector_register(key->s, conn->remote_fd, &socks5_handler, OP_NOOP, conn);
+            if (ss != SELECTOR_SUCCESS) {
+                close(conn->remote_fd);
+                return SOCKS5_ERROR;
+            }
+            return SOCKS5_REPLY;
         }
     }
     conn->addr_next = rp;
@@ -869,11 +904,18 @@ static unsigned connect_on_write(struct selector_key *key) {
             
             selector_set_interest_key(key, OP_NOOP);
             return SOCKS5_REPLY;
-        } else {
-            log_print_error("Failed connecting: %s", strerror(error));
+        } else {            
             selector_unregister_fd(key->s, conn->remote_fd);
             close(conn->remote_fd);
             conn->remote_fd = -1;
+            log_print_error("Failed connecting: %s", strerror(error));
+
+            if (conn->addr_next != NULL) {
+                selector_notify_block(key->s, conn->client_fd);
+                return SOCKS5_CONNECT; 
+            }
+
+            // 3. No quedan más IPs, reportamos el error final
             conn->connect_status = errno_to_socks_status(error);
             return SOCKS5_REPLY;
         }
@@ -956,7 +998,9 @@ static unsigned reply_on_write(struct selector_key *key) {
     ssize_t n = send(key->fd, ptr, count, MSG_NOSIGNAL);
 
     if (n == -1) {
-        // Error in the socket 
+        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+            return SOCKS5_REPLY;
+        }
         log_print_error("Failed sending Reply: %s", strerror(errno));
         return SOCKS5_DONE;
     }
