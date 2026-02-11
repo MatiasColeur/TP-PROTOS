@@ -232,6 +232,8 @@ Clientes simples para validar handshake, auth y CONNECT.
 * `-C` Conexiones concurrentes
 * `-B` Bytes transferidos
 * `-U <user>` Logs/conexiones de un usuario
+* `-l <addr>` Host donde escucha el proxy SOCKS (por defecto `127.0.0.1`)
+* `-p <port>` Puerto donde escucha el proxy SOCKS (por defecto `1080`)
 * `-A <addr>` Host donde escucha la API de administración (por defecto `::1`)
 * `-P <port>` Puerto donde escucha la API (por defecto `8080`). Úsalo si la API se ejecuta en otro puerto, por ejemplo `./bin/admin_metrics -P 8081`.
 
@@ -252,7 +254,7 @@ Clientes simples para validar handshake, auth y CONNECT.
 **Genérico**
 
 ```bash
-./bin/admin_user_mgmt ACTION
+./bin/admin_user_mgmt [OPTIONS] ACTION
 ```
 
 **Acciones**
@@ -261,12 +263,20 @@ Clientes simples para validar handshake, auth y CONNECT.
 * `-R <user> <role>` Cambiar rol
 * `-D <user>` Eliminar usuario
 
+**Opciones**
+
+* `-l <addr>` Host donde escucha el proxy SOCKS (por defecto `127.0.0.1`)
+* `-p <port>` Puerto donde escucha el proxy SOCKS (por defecto `1080`)
+* `-a <addr>` Host donde escucha la API de administración (por defecto `::1`)
+* `-P <port>` Puerto donde escucha la API (por defecto `8080`)
+
 **Ejemplos**
 
 ```bash
 ./bin/admin_user_mgmt -A pepito user
 ./bin/admin_user_mgmt -R juan admin
 ./bin/admin_user_mgmt -D messi
+./bin/admin_user_mgmt -l 192.168.0.10 -p 1080 -a 192.168.0.20 -P 8080 -A pepito user
 ```
 
 Al ejecutar `-A` se pedirá la contraseña de forma interactiva y no se imprimirá en pantalla (ni quedará en el historial de la shell).

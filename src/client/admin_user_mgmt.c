@@ -5,6 +5,7 @@
 #include <string.h>
 #include <termios.h>
 #include <unistd.h>
+#include <arpa/inet.h>
 
 #include "../../include/shared.h"
 #include "../../include/api.h"
@@ -25,7 +26,13 @@
 
 static void usage(const char *prog) {
     fprintf(stderr,
-        "Usage: %s ACTION\n"
+        "Usage: %s [OPTIONS] ACTION\n"
+        "\n"
+        "Options:\n"
+        "  -l <addr>       Address where the SOCKS proxy is listening (default: %s)\n"
+        "  -p <port>       Port where the SOCKS proxy is listening (default: %u)\n"
+        "  -a <addr>       Address where the Admin API is listening (default: %s)\n"
+        "  -P <port>       Port where the Admin API is listening (default: %u)\n"
         "\n"
         "Actions (choose exactly one):\n"
         "  -A <user> <role>          Add user (role: user|admin, password prompted)\n"
@@ -36,7 +43,9 @@ static void usage(const char *prog) {
         "Examples:\n"
         "  %s -A pepito user\n"
         "  %s -R juan admin\n"
-        "  %s -D messi\n",
+        "  %s -D messi\n"
+        "  %s -l 192.168.0.10 -p 1080 -a 192.168.0.20 -P 8080 -A pepito user\n",
+        prog, SOCKS_ADDR, (unsigned)SOCKS_PORT, API_ADDR, (unsigned)API_PORT,
         prog, prog, prog, prog
     );
 }
@@ -79,6 +88,23 @@ static bool prompt_password(char *out, size_t len) {
 
 static bool role_is_valid(const char *role) {
     return role != NULL && (strcmp(role, "user") == 0 || strcmp(role, "admin") == 0);
+}
+
+static int connect_api_via_socks(int sockfd, const char *api_addr, uint16_t api_port) {
+    struct in6_addr v6;
+    struct in_addr v4;
+
+    if (inet_pton(AF_INET6, api_addr, &v6) == 1) {
+        perform_request_ipv6(sockfd, api_addr, api_port);
+        return 0;
+    }
+    if (inet_pton(AF_INET, api_addr, &v4) == 1) {
+        perform_request_ipv4(sockfd, api_addr, api_port);
+        return 0;
+    }
+
+    print_error("Invalid API address: %s", api_addr);
+    return -1;
 }
 
 /* Wrapper: ADD_USER "username password role" */
@@ -124,14 +150,43 @@ static void admin_quit(int sockfd, uint32_t *id_counter) {
 int main(int argc, char *argv[]) {
     enum { ACT_NONE, ACT_ADD, ACT_ROLE, ACT_DEL } act = ACT_NONE;
 
+    const char *socks_addr = SOCKS_ADDR;
+    uint16_t socks_port = SOCKS_PORT;
+    const char *api_addr = API_ADDR;
+    uint16_t api_port = API_PORT;
+
     const char *add_user = NULL, *add_pass = NULL, *add_role = NULL;
     char add_pass_buf[128] = {0};
     const char *role_user = NULL, *role_role = NULL;
     const char *del_user = NULL;
 
     int opt;
-    while ((opt = getopt(argc, argv, "A:R:D:h")) != -1) {
+    while ((opt = getopt(argc, argv, "A:R:D:hl:p:a:P:")) != -1) {
         switch (opt) {
+            case 'l':
+                socks_addr = optarg;
+                break;
+            case 'p': {
+                int parsed = atoi(optarg);
+                if (parsed <= 0 || parsed > 65535) {
+                    fprintf(stderr, "[ADMIN] Invalid SOCKS port: %s\n", optarg);
+                    return 1;
+                }
+                socks_port = (uint16_t) parsed;
+                break;
+            }
+            case 'a':
+                api_addr = optarg;
+                break;
+            case 'P': {
+                int parsed = atoi(optarg);
+                if (parsed <= 0 || parsed > 65535) {
+                    fprintf(stderr, "[ADMIN] Invalid API port: %s\n", optarg);
+                    return 1;
+                }
+                api_port = (uint16_t) parsed;
+                break;
+            }
             case 'A': {
                 // -A consumes 2 args: user role; password read interactively
                 act = ACT_ADD;
@@ -189,11 +244,14 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    int sockfd = create_client_socket(SOCKS_ADDR, SOCKS_PORT);
+    int sockfd = create_client_socket(socks_addr, (int)socks_port);
     if (sockfd < 0) return 1;
 
     perform_handshake(sockfd, "admin", "admin");
-    perform_request_ipv6(sockfd, API_ADDR, API_PORT);
+    if (connect_api_via_socks(sockfd, api_addr, api_port) < 0) {
+        close(sockfd);
+        return 1;
+    }
 
     uint32_t req_id = 1;
 
