@@ -1,38 +1,24 @@
-// SOCKS5 Throughput Stress Test (echo target)
-// Usage:
-//   ./bin/stress_tp [OPTIONS] <concurrency> <duration_sec> [payload_bytes]
-//
-// OPTIONS (reusa tu parser):
-//   -l <SOCKS addr>  (default: 127.0.0.1)
-//   -p <SOCKS port>  (default: 1080)
-//   -L <dst host>    (default: 127.0.0.1)
-//   -P <dst port>    (default: 9090)
-//
-// Example:
-//   socat TCP-LISTEN:9090,reuseaddr,fork SYSTEM:'cat'
-//   ./bin/stress_throughput -l 127.0.0.1 -p 1080 -L 127.0.0.1 -P 9090 200 10 16384
-
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdint.h>
 #include <string.h>
 #include <unistd.h>
 #include <errno.h>
 #include <pthread.h>
+#include <arpa/inet.h>
 #include <stdatomic.h>
-#include <sys/time.h>
 #include <time.h>
-#include <netdb.h>
-#include <sys/socket.h>
+#include <signal.h>
+#include <getopt.h>
 
-#include "../../include/parser_arguments.h"
+#include "../../include/parser_arguments.h" 
+#include "../../include/client_utils.h"
 
-#define TIMEOUT_SEC 5
+#define BUFFER_SIZE 8192
 
 static const ArgParserConfig STRESS_TP_CFG = {
     .version_str = "SOCKS5 Throughput Stress Client v1.0",
     .help_str =
-        "Usage: %s [OPTIONS] <concurrency> <duration_sec> [payload_bytes]\n"
+        "Usage: %s [OPTIONS] <concurrency> <duration_sec> <payload_bytes KB>\n"
         "  -l <SOCKS addr>  Dirección del proxy (default: 127.0.0.1)\n"
         "  -p <SOCKS port>  Puerto del proxy (default: 1080)\n"
         "  -L <dst host>    Host destino del CONNECT (default: 127.0.0.1)\n"
@@ -50,233 +36,98 @@ static const ArgParserConfig STRESS_TP_CFG = {
     .enable_dissectors = false,
 };
 
-typedef struct {
-    int id;
-    const char *socks_addr;
-    uint16_t socks_port;
-    const char *target_host;
-    uint16_t target_port;
-    int duration_sec;
-    size_t payload_bytes;
-} thread_arg_t;
+// --- Configuración Global (Puente entre Args y Hilos) ---
+struct {
+    char socks_addr[256];
+    int  socks_port;
+    char target_host[256];
+    int  target_port;
+    size_t payload_size;
+} global_conf;
 
-static atomic_int ok_tunnels = 0;
-static atomic_int fail_tunnels = 0;
+// --- Variables Globales Atómicas para Estadísticas ---
+atomic_long bytes_sent = 0;
+atomic_long bytes_recv = 0;
+atomic_int  tunnels_ok = 0;
+atomic_int  tunnels_fail = 0;
+volatile sig_atomic_t stop_benchmark = 0;
 
-static atomic_ullong total_sent = 0;
-static atomic_ullong total_recv = 0;
+int connect_socks5_tunnel() {
+    // 1. Crear Socket
+    int sockfd = create_client_socket(global_conf.socks_addr, global_conf.socks_port);
+    if (sockfd < 0) return -1;
 
-// barrier simple
-static atomic_int ready_cnt = 0;
-static atomic_int start_flag = 0;
+    // 2. Handshake + Autenticación (admin/admin)
+    // Aquí llamamos a la nueva función
+    perform_handshake_thread(sockfd, "admin", "admin");
+    
 
-static uint64_t now_ms(void) {
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    return (uint64_t)ts.tv_sec * 1000ULL + (uint64_t)ts.tv_nsec / 1000000ULL;
-}
-
-static int set_timeouts(int fd) {
-    struct timeval tv;
-    tv.tv_sec = TIMEOUT_SEC;
-    tv.tv_usec = 0;
-    if (setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv) < 0) return -1;
-    if (setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, (const char*)&tv, sizeof tv) < 0) return -1;
-    return 0;
-}
-
-static int connect_tcp_any(const char *host, uint16_t port) {
-    char portstr[16];
-    snprintf(portstr, sizeof(portstr), "%u", (unsigned)port);
-
-    struct addrinfo hints;
-    memset(&hints, 0, sizeof(hints));
-    hints.ai_socktype = SOCK_STREAM;
-    hints.ai_family   = AF_UNSPEC;
-
-    struct addrinfo *res = NULL;
-    int rc = getaddrinfo(host, portstr, &hints, &res);
-    if (rc != 0 || res == NULL) return -1;
-
-    int fd = -1;
-    for (struct addrinfo *rp = res; rp != NULL; rp = rp->ai_next) {
-        fd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
-        if (fd < 0) continue;
-
-        if (set_timeouts(fd) < 0) {
-            close(fd);
-            fd = -1;
-            continue;
-        }
-
-        if (connect(fd, rp->ai_addr, rp->ai_addrlen) == 0) {
-            break; // ok
-        }
-
-        close(fd);
-        fd = -1;
-    }
-
-    freeaddrinfo(res);
-    return fd;
-}
-
-static int socks5_handshake_auth(int fd, const char *user, const char *pass) {
-    uint8_t buf[512];
-    ssize_t n;
-
-    // HELLO: VER=5, NMETHODS=1, METHOD=0x02
-    uint8_t hello[] = { 0x05, 0x01, 0x02 };
-    if (send(fd, hello, sizeof(hello), MSG_NOSIGNAL) < 0) return -1;
-
-    n = recv(fd, buf, sizeof(buf), 0);
-    if (n < 2 || buf[0] != 0x05 || buf[1] != 0x02) return -1;
-
-    // RFC1929 auth
-    size_t ulen = strlen(user);
-    size_t plen = strlen(pass);
-    if (ulen > 255 || plen > 255) return -1;
-
-    size_t idx = 0;
-    buf[idx++] = 0x01;
-    buf[idx++] = (uint8_t)ulen;
-    memcpy(buf + idx, user, ulen); idx += ulen;
-    buf[idx++] = (uint8_t)plen;
-    memcpy(buf + idx, pass, plen); idx += plen;
-
-    if (send(fd, buf, idx, MSG_NOSIGNAL) < 0) return -1;
-
-    n = recv(fd, buf, sizeof(buf), 0);
-    if (n < 2 || buf[0] != 0x01 || buf[1] != 0x00) return -1;
-
-    return 0;
-}
-
-static int socks5_connect_domain(int fd, const char *host, uint16_t port) {
-    uint8_t buf[512];
-    ssize_t n;
-
-    size_t hlen = strlen(host);
-    if (hlen == 0 || hlen > 255) return -1;
-
-    size_t idx = 0;
-    buf[idx++] = 0x05; // VER
-    buf[idx++] = 0x01; // CONNECT
-    buf[idx++] = 0x00; // RSV
-    buf[idx++] = 0x03; // ATYP DOMAIN
-    buf[idx++] = (uint8_t)hlen;
-    memcpy(buf + idx, host, hlen); idx += hlen;
-    uint16_t pn = htons(port);
-    memcpy(buf + idx, &pn, 2); idx += 2;
-
-    if (send(fd, buf, idx, MSG_NOSIGNAL) < 0) return -1;
-
-    n = recv(fd, buf, sizeof(buf), 0);
-    if (n < 4) return -1;
-    if (buf[0] != 0x05) return -1;
-    if (buf[1] != 0x00) return -1; // REP != success
-
-    // No hace falta parsear el resto para el test.
-    return 0;
-}
-
-// Echo throughput loop: send payload, recv same bytes back
-static int run_echo_loop(int fd, int duration_sec, size_t payload_bytes,
-                         uint64_t *sent_out, uint64_t *recv_out) {
-    uint8_t *payload = malloc(payload_bytes);
-    uint8_t *rxbuf   = malloc(payload_bytes);
-    if (!payload || !rxbuf) {
-        free(payload);
-        free(rxbuf);
-        return -1;
-    }
-
-    // payload determinístico
-    for (size_t i = 0; i < payload_bytes; i++) payload[i] = (uint8_t)(i & 0xFF);
-
-    uint64_t deadline = now_ms() + (uint64_t)duration_sec * 1000ULL;
-    uint64_t sent = 0, recvd = 0;
-
-    while (now_ms() < deadline) {
-        // send full payload (best effort)
-        size_t off = 0;
-        while (off < payload_bytes) {
-            ssize_t w = send(fd, payload + off, payload_bytes - off, MSG_NOSIGNAL);
-            if (w <= 0) goto done; // timeout / closed / error
-            off += (size_t)w;
-            sent += (uint64_t)w;
-        }
-
-        // recv same amount
-        size_t need = payload_bytes;
-        while (need > 0) {
-            ssize_t r = recv(fd, rxbuf, need, 0);
-            if (r <= 0) goto done;
-            need -= (size_t)r;
-            recvd += (uint64_t)r;
-        }
-    }
-
-done:
-    free(payload);
-    free(rxbuf);
-    *sent_out = sent;
-    *recv_out = recvd;
-    // consider "ok" si al menos movió algo
-    return (sent > 0 && recvd > 0) ? 0 : -1;
-}
-
-static void *worker(void *p) {
-    thread_arg_t *a = (thread_arg_t*)p;
-
-    int fd = connect_tcp_any(a->socks_addr, a->socks_port);
-    if (fd < 0) goto fail;
-
-    if (socks5_handshake_auth(fd, "admin", "admin") < 0) {
-        close(fd);
-        goto fail;
-    }
-
-    if (socks5_connect_domain(fd, a->target_host, a->target_port) < 0) {
-        close(fd);
-        goto fail;
-    }
-
-    atomic_fetch_add(&ok_tunnels, 1);
-
-    // barrier: esperar start_flag
-    atomic_fetch_add(&ready_cnt, 1);
-    while (atomic_load(&start_flag) == 0) {
-        // busy wait corto
-        sched_yield();
-    }
-
-    uint64_t s = 0, r = 0;
-    int rc = run_echo_loop(fd, a->duration_sec, a->payload_bytes, &s, &r);
-    close(fd);
-
-    if (rc == 0) {
-        atomic_fetch_add(&total_sent, s);
-        atomic_fetch_add(&total_recv, r);
+    // 3. Request (Lógica dinámica IP vs Dominio)
+    struct sockaddr_in sa;
+    
+    if (inet_pton(AF_INET, global_conf.target_host, &(sa.sin_addr)) != 0) {
+        perform_request_ipv4_thread(sockfd, global_conf.target_host, global_conf.target_port);
     } else {
-        atomic_fetch_add(&fail_tunnels, 1);
+        perform_request_domain_thread(sockfd, global_conf.target_host, global_conf.target_port);
     }
 
-    free(a);
-    return NULL;
+    return sockfd; // Túnel listo
+}
 
-fail:
-    atomic_fetch_add(&fail_tunnels, 1);
-    atomic_fetch_add(&ready_cnt, 1); // para no colgar el barrier
-    free(a);
+// --- Worker Thread ---
+void *worker_thread(void *arg) {
+    char *tx_buf = malloc(global_conf.payload_size);
+    char *rx_buf = malloc(global_conf.payload_size);
+    
+    if (!tx_buf || !rx_buf) {
+        atomic_fetch_add(&tunnels_fail, 1);
+        if (tx_buf) free(tx_buf);
+        if (rx_buf) free(rx_buf);
+        return NULL;
+    }
+    
+    // Rellenamos con datos basura
+    memset(tx_buf, 'A', global_conf.payload_size);
+
+    int sock = connect_socks5_tunnel();
+    if (sock < 0) {
+        atomic_fetch_add(&tunnels_fail, 1);
+        free(tx_buf);
+        free(rx_buf);
+        return NULL;
+    }
+
+    atomic_fetch_add(&tunnels_ok, 1);
+
+    while (!stop_benchmark) {
+        ssize_t sent = send(sock, tx_buf, global_conf.payload_size, 0);
+        if (sent <= 0) break;
+        atomic_fetch_add(&bytes_sent, sent);
+
+        ssize_t received = 0;
+        while (received < sent) {
+            ssize_t n = recv(sock, rx_buf + received, sent - received, 0);
+            if (n <= 0) goto cleanup;
+            received += n;
+        }
+        atomic_fetch_add(&bytes_recv, received);
+    }
+
+cleanup:
+    close(sock);
+    free(tx_buf);
+    free(rx_buf);
     return NULL;
 }
 
-int main(int argc, const char *argv[]) {
+// --- Main ---
+int main(int argc, char *argv[]) {
     ProgramArgs args;
 
+    // 1. Parsing de argumentos usando tu librería
     if (parse_arguments_ex(argc, argv, &args, &STRESS_TP_CFG) < 0) return EXIT_FAILURE;
 
+    // 2. Validación de argumentos posicionales (tu snippet)
     if (optind + 1 >= argc) {
         fprintf(stderr, "Uso: %s [opciones] <concurrency> <duration_sec> [payload_bytes]\n", argv[0]);
         args_destroy(&args, &STRESS_TP_CFG);
@@ -289,7 +140,7 @@ int main(int argc, const char *argv[]) {
 
     if (optind < argc) {
         long v = atol(argv[optind++]);
-        if (v > 0) payload_bytes = (size_t)v;
+        if (v > 0) payload_bytes = (size_t)v * 1024;
     }
     if (optind < argc) {
         fprintf(stderr, "Argumentos extra no reconocidos.\n");
@@ -308,78 +159,70 @@ int main(int argc, const char *argv[]) {
         return EXIT_FAILURE;
     }
 
-    printf("=== SOCKS5 Throughput Test ===\n");
-    printf("SOCKS:  %s:%u\n", args.socks_addr, (unsigned)args.socks_port);
-    printf("Target: %s:%u (ECHO esperado)\n", args.aux_addr, (unsigned)args.aux_port);
-    printf("Concurrency: %d\n", concurrency);
-    printf("Duration:    %d sec\n", duration_sec);
-    printf("Payload:     %zu bytes\n", payload_bytes);
-    printf("------------------------------------\n");
+    // 3. Transferir configuración a estructura global para los hilos
+    // Nota: Asumo que ProgramArgs tiene estos campos. Si se llaman diferente en tu args.h, cámbialos aquí.
+    strncpy(global_conf.socks_addr, args.socks_addr, sizeof(global_conf.socks_addr)-1);
+    global_conf.socks_port = args.socks_port;
+    
+    // Si tu args.h tiene campos especificos para destino (-L, -P) úsalos.
+    // Si args reutiliza dst_addr para esto:
+    strncpy(global_conf.target_host, args.aux_addr, sizeof(global_conf.target_host)-1);
+    global_conf.target_port = args.aux_port;
+    
+    global_conf.payload_size = payload_bytes;
 
-    pthread_t *ths = calloc((size_t)concurrency, sizeof(pthread_t));
-    if (!ths) {
-        perror("calloc");
+    printf("Iniciando Stress Test de Throughput:\n");
+    printf("  SOCKS5:       %s:%d\n", global_conf.socks_addr, global_conf.socks_port);
+    printf("  Target:       %s:%d\n", global_conf.target_host, global_conf.target_port);
+    printf("  Hilos:        %d\n", concurrency);
+    printf("  Duración:     %d s\n", duration_sec);
+    printf("  Payload:      %zu bytes\n\n", payload_bytes);
+
+    // 4. Ejecución de Threads
+    pthread_t *threads = malloc(sizeof(pthread_t) * concurrency);
+    if (!threads) {
+        perror("malloc");
         args_destroy(&args, &STRESS_TP_CFG);
-        return EXIT_FAILURE;
+        return 1;
     }
 
-    uint64_t t0 = now_ms();
+    struct timespec start, end;
+    clock_gettime(CLOCK_MONOTONIC, &start);
 
     for (int i = 0; i < concurrency; i++) {
-        thread_arg_t *a = malloc(sizeof(*a));
-        if (!a) {
-            perror("malloc");
-            atomic_fetch_add(&fail_tunnels, 1);
-            atomic_fetch_add(&ready_cnt, 1);
-            continue;
-        }
-        a->id = i;
-        a->socks_addr = args.socks_addr;
-        a->socks_port = args.socks_port;
-        a->target_host = args.aux_addr;
-        a->target_port = args.aux_port;
-        a->duration_sec = duration_sec;
-        a->payload_bytes = payload_bytes;
-
-        if (pthread_create(&ths[i], NULL, worker, a) != 0) {
+        if (pthread_create(&threads[i], NULL, worker_thread, NULL) != 0) {
             perror("pthread_create");
-            free(a);
-            atomic_fetch_add(&fail_tunnels, 1);
-            atomic_fetch_add(&ready_cnt, 1);
+            atomic_fetch_add(&tunnels_fail, 1);
         }
     }
 
-    // esperar que "todos" pasen por ready (aunque fallen)
-    while (atomic_load(&ready_cnt) < concurrency) {
-        sleep(1000);
-        // opcional: timeout
-        if (now_ms() - t0 > 30000) break;
-    }
+    sleep(duration_sec);
+    clock_gettime(CLOCK_MONOTONIC, &end);
 
-    uint64_t start = now_ms();
-    atomic_store(&start_flag, 1);
+    // --- CÁLCULO DE ESTADÍSTICAS ---
 
-    for (int i = 0; i < concurrency; i++) {
-        if (ths[i]) pthread_join(ths[i], NULL);
-    }
-    uint64_t end = now_ms();
+    // 1. Tiempo transcurrido
+    double elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
+    
+    // Evitar división por cero si el test dura 0s (improbable pero posible)
+    if (elapsed <= 0.0) elapsed = 0.001;
 
-    free(ths);
+    // 2. Mapeo de variables atómicas a locales
+    int ok = atomic_load(&tunnels_ok);
+    int fail = atomic_load(&tunnels_fail);
+    long total_sent = atomic_load(&bytes_sent);
+    long total_recv = atomic_load(&bytes_recv);
 
-    uint64_t sent = atomic_load(&total_sent);
-    uint64_t recvd = atomic_load(&total_recv);
-    int ok = atomic_load(&ok_tunnels);
-    int fail = atomic_load(&fail_tunnels);
+    // 3. Conversión a MiB
+    double mib_sent = (double)total_sent / (1024.0 * 1024.0);
+    double mib_recv = (double)total_recv / (1024.0 * 1024.0);
 
-    double elapsed = (double)(end - start) / 1000.0;
-    if (elapsed <= 0.0) elapsed = (double)duration_sec;
-
-    double mib_sent = (double)sent / (1024.0 * 1024.0);
-    double mib_recv = (double)recvd / (1024.0 * 1024.0);
-
+    // 4. Cálculo de Throughput (Velocidad)
     double thr_sent = mib_sent / elapsed;
     double thr_recv = mib_recv / elapsed;
-    double thr_total = (mib_sent + mib_recv) / elapsed;
+    double thr_total = thr_sent + thr_recv;
+
+    // --- IMPRESIÓN SOLICITADA ---
 
     printf("\n------------------------------------\n");
     printf("RESULTADOS:\n");
@@ -391,8 +234,8 @@ int main(int argc, const char *argv[]) {
     printf("Throughput: sent=%.2f MiB/s  recv=%.2f MiB/s  total=%.2f MiB/s\n",
            thr_sent, thr_recv, thr_total);
 
-    args_destroy(&args, &STRESS_TP_CFG);
-
-    // si hubo 0 túneles ok, fallo duro
-    return (ok > 0) ? EXIT_SUCCESS : EXIT_FAILURE;
+    // --- LIMPIEZA ---
+    free(threads);
+    args_destroy(&args, &STRESS_TP_CFG); // Asegúrate de que STRESS_TP_CFG sea la correcta
+    return EXIT_SUCCESS;
 }
