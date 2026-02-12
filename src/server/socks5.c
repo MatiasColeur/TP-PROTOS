@@ -2,7 +2,7 @@
 #include "../../include/dissectors.h"
 
 
-#define BUFFER_SIZE         4096
+#define BUFFER_SIZE         16384
 
 #define ADDR_BUFFER_LEN     64
 
