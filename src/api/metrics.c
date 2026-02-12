@@ -71,11 +71,11 @@ void metrics_find_user(const char *username) {
 
         char copy[MAX_LINE];
         strncpy(copy, line, sizeof(copy));
-        copy[sizeof(copy)-1] = '\0';   // <-- FIX importante
+        copy[sizeof(copy)-1] = '\0';
 
         // parseo por TAB
         strtok(copy, "\t");  // timestamp
-        char *field2 = strtok(NULL, "\t");  // username  <---- IMPORTANTE
+        char *field2 = strtok(NULL, "\t"); // username
 
         if (field2 == NULL)
             continue;
