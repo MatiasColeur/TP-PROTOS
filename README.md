@@ -216,6 +216,123 @@ Clientes simples para validar handshake, auth y CONNECT.
 
 ---
 
+## Probes de dissector (HTTP y POP3)
+
+Clientes de prueba para disparar los dissectors y verificar el registro de credenciales en `log/credentials.txt`.
+
+---
+
+### Cliente HTTP probe
+
+**Generico**
+
+```bash
+./bin/client_http_probe [OPTIONS] [<user> <pass>] [form]
+```
+
+**Opciones**
+
+* `-l <SOCKS addr>` (default: `127.0.0.1`)
+* `-p <SOCKS port>` (default: `1080`)
+* `-L <dst host>` (default: `127.0.0.1`)
+* `-P <dst port>` (default: `8080`)
+* `-h / -v` Ayuda o version
+
+**Notas**
+
+* Posicionales opcionales: `<user> <pass>` (default: `alice/secret`).
+* Si agregas el tercer posicional `form`, envia un POST `application/x-www-form-urlencoded`.
+* Sin `form`, envia Basic Auth en un GET.
+
+**Ejemplos**
+
+```bash
+./bin/client_http_probe
+./bin/client_http_probe alice secret
+./bin/client_http_probe alice secret form
+./bin/client_http_probe -L 127.0.0.1 -P 8080 alice secret
+```
+
+---
+
+### Cliente POP3 probe
+
+**Generico**
+
+```bash
+./bin/client_pop3_probe [OPTIONS] [<user> <pass>]
+```
+
+**Opciones**
+
+* `-l <SOCKS addr>` (default: `127.0.0.1`)
+* `-p <SOCKS port>` (default: `1080`)
+* `-L <dst host>` (default: `127.0.0.1`)
+* `-P <dst port>` (default: `110`)
+* `-h / -v` Ayuda o version
+
+**Notas**
+
+* Posicionales opcionales: `<user> <pass>` (default: `alice/secret`).
+* Envia `USER` y `PASS` y cierra, ideal para probar el dissector POP3.
+
+**Ejemplos**
+
+```bash
+./bin/client_pop3_probe
+./bin/client_pop3_probe alice secret
+./bin/client_pop3_probe -L 127.0.0.1 -P 110 alice secret
+```
+
+---
+
+### Ejemplo end-to-end (local)
+
+**1) Levantar API y SOCKS**
+
+```bash
+./bin/api
+./bin/socks5
+```
+
+**2) Levantar servidores dummy**
+
+HTTP (cualquier servidor sirve, el dissector solo mira el request):
+
+```bash
+python -m http.server 8080
+```
+
+POP3 dummy (solo para aceptar la conexion y leer USER/PASS):
+
+```bash
+socat TCP-LISTEN:110,reuseaddr,fork SYSTEM:'cat'
+```
+
+**3) Disparar probes**
+
+```bash
+./bin/client_http_probe -L 127.0.0.1 -P 8080 alice secret
+./bin/client_http_probe -L 127.0.0.1 -P 8080 alice secret form
+./bin/client_pop3_probe -L 127.0.0.1 -P 110 alice secret
+```
+
+**4) Verificar credenciales**
+
+```bash
+cat log/credentials.txt
+```
+
+**Nota**
+
+Si no podes bindear el puerto 110 (por ejemplo en Linux sin permisos), usa otro puerto. Ejemplo:
+
+```bash
+socat TCP-LISTEN:1110,reuseaddr,fork SYSTEM:'cat'
+./bin/client_pop3_probe -L 127.0.0.1 -P 1110 alice secret
+```
+
+---
 ## Métricas y monitoreo
 
 ### Cliente de métricas (vía SOCKS → API)
@@ -355,3 +472,7 @@ socat TCP-LISTEN:9090,reuseaddr,fork SYSTEM:'cat'
 * **CMD:** Qué queremos hacer (ej: 0x01 = Get Metrics, 0x02 = Add User).
 * **Len:** Cuántos bytes de datos vienen después (uint16 big-endian).
 * **Payload:** Los argumentos o la respuesta.
+
+
+
+
