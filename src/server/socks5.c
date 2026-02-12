@@ -125,6 +125,11 @@ struct socks5_connection {
      */
     int connect_status;
 
+    /**
+     * @brief True when closing remote_fd to retry another address.
+     */
+    bool retry_connect;
+
 /* -------- Auxiliary -------- */
 
     /** 
@@ -905,17 +910,22 @@ static unsigned connect_on_write(struct selector_key *key) {
             selector_set_interest_key(key, OP_NOOP);
             return SOCKS5_REPLY;
         } else {            
-            selector_unregister_fd(key->s, conn->remote_fd);
-            close(conn->remote_fd);
-            conn->remote_fd = -1;
             log_print_error("Failed connecting: %s", strerror(error));
 
             if (conn->addr_next != NULL) {
+                conn->retry_connect = true;
+                selector_unregister_fd(key->s, conn->remote_fd);
+                conn->retry_connect = false;
+                conn->remote_fd = -1;
                 selector_notify_block(key->s, conn->client_fd);
                 return SOCKS5_CONNECT; 
             }
 
             // 3. No quedan más IPs, reportamos el error final
+            conn->retry_connect = true;
+            selector_unregister_fd(key->s, conn->remote_fd);
+            conn->retry_connect = false;
+            conn->remote_fd = -1;
             conn->connect_status = errno_to_socks_status(error);
             return SOCKS5_REPLY;
         }
@@ -1212,6 +1222,7 @@ socks5_block(struct selector_key *key) {
 static void 
 socks5_close(struct selector_key *key) {
     socks5_connection_ptr conn = ATTACHMENT(key);
+    const bool closing_remote = (key->fd == conn->remote_fd);
 
     close(key->fd);
 
@@ -1219,8 +1230,12 @@ socks5_close(struct selector_key *key) {
 
     if (key->fd == conn->client_fd) {
         conn->client_fd = -1;
-    } else if (key->fd == conn->remote_fd) {
+    } else if (closing_remote) {
         conn->remote_fd = -1;
+    }
+
+    if (closing_remote && conn->retry_connect) {
+        return;
     }
 
     // verify if theres another socket open
