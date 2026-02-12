@@ -18,7 +18,7 @@
 static const ArgParserConfig STRESS_TP_CFG = {
     .version_str = "SOCKS5 Throughput Stress Client v1.0",
     .help_str =
-        "Usage: %s [OPTIONS] <concurrency> <duration_sec> [payload_bytes]\n"
+        "Usage: %s [OPTIONS] <concurrency> <duration_sec> <payload_bytes KB>\n"
         "  -l <SOCKS addr>  Dirección del proxy (default: 127.0.0.1)\n"
         "  -p <SOCKS port>  Puerto del proxy (default: 1080)\n"
         "  -L <dst host>    Host destino del CONNECT (default: 127.0.0.1)\n"
@@ -140,7 +140,7 @@ int main(int argc, char *argv[]) {
 
     if (optind < argc) {
         long v = atol(argv[optind++]);
-        if (v > 0) payload_bytes = (size_t)v;
+        if (v > 0) payload_bytes = (size_t)v * 1024;
     }
     if (optind < argc) {
         fprintf(stderr, "Argumentos extra no reconocidos.\n");
@@ -197,4 +197,45 @@ int main(int argc, char *argv[]) {
     }
 
     sleep(duration_sec);
+    clock_gettime(CLOCK_MONOTONIC, &end);
+
+    // --- CÁLCULO DE ESTADÍSTICAS ---
+
+    // 1. Tiempo transcurrido
+    double elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
+    
+    // Evitar división por cero si el test dura 0s (improbable pero posible)
+    if (elapsed <= 0.0) elapsed = 0.001;
+
+    // 2. Mapeo de variables atómicas a locales
+    int ok = atomic_load(&tunnels_ok);
+    int fail = atomic_load(&tunnels_fail);
+    long total_sent = atomic_load(&bytes_sent);
+    long total_recv = atomic_load(&bytes_recv);
+
+    // 3. Conversión a MiB
+    double mib_sent = (double)total_sent / (1024.0 * 1024.0);
+    double mib_recv = (double)total_recv / (1024.0 * 1024.0);
+
+    // 4. Cálculo de Throughput (Velocidad)
+    double thr_sent = mib_sent / elapsed;
+    double thr_recv = mib_recv / elapsed;
+    double thr_total = thr_sent + thr_recv;
+
+    // --- IMPRESIÓN SOLICITADA ---
+
+    printf("\n------------------------------------\n");
+    printf("RESULTADOS:\n");
+    printf("Tunnels OK: %d\n", ok);
+    printf("Fails:      %d\n", fail);
+    printf("Elapsed:    %.3f s\n", elapsed);
+    printf("Sent:       %.2f MiB\n", mib_sent);
+    printf("Recv:       %.2f MiB\n", mib_recv);
+    printf("Throughput: sent=%.2f MiB/s  recv=%.2f MiB/s  total=%.2f MiB/s\n",
+           thr_sent, thr_recv, thr_total);
+
+    // --- LIMPIEZA ---
+    free(threads);
+    args_destroy(&args, &STRESS_TP_CFG); // Asegúrate de que STRESS_TP_CFG sea la correcta
+    return EXIT_SUCCESS;
 }
