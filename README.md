@@ -436,14 +436,14 @@ socat TCP-LISTEN:9090,reuseaddr,fork SYSTEM:'cat'
 **Genérico**
 
 ```bash
-./bin/stress_throughput [OPTIONS] <concurrency> <duration_sec> [payload_bytes]
+./bin/stress_throughput [OPTIONS] <concurrency> <duration_sec> <payload_bytes KB>
 ```
 
 **Ejemplo**
 
 ```bash
 ./bin/stress_throughput 100 10
-./bin/stress_throughput -L 127.0.0.1 -P 9090 100 10 16384
+./bin/stress_throughput -L 127.0.0.1 -P 9090 100 10 10
 ```
 
 ---

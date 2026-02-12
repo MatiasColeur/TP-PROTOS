@@ -13,8 +13,6 @@
 #include "../../include/parser_arguments.h" 
 #include "../../include/client_utils.h"
 
-#define BUFFER_SIZE 8192
-
 static const ArgParserConfig STRESS_TP_CFG = {
     .version_str = "SOCKS5 Throughput Stress Client v1.0",
     .help_str =
@@ -52,7 +50,7 @@ atomic_int  tunnels_ok = 0;
 atomic_int  tunnels_fail = 0;
 volatile sig_atomic_t stop_benchmark = 0;
 
-int connect_socks5_tunnel() {
+static int connect_socks5_tunnel(void) {
     // 1. Crear Socket
     int sockfd = create_client_socket(global_conf.socks_addr, global_conf.socks_port);
     if (sockfd < 0) return -1;
@@ -121,7 +119,7 @@ cleanup:
 }
 
 // --- Main ---
-int main(int argc, char *argv[]) {
+int main(const int argc, const char *argv[]) {
     ProgramArgs args;
 
     // 1. Parsing de argumentos usando tu librería
