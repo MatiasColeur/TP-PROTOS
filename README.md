@@ -1,7 +1,3 @@
-![porotos](/img/porotos.jpg)
-
----
-
 # POROTOS — Servidor SOCKS5 No Bloqueante
 
 Este proyecto implementa un **servidor proxy SOCKS5** según los RFC **1928** y **1929**, utilizando **I/O no bloqueante**, una **máquina de estados**, y un **multiplexor selector** para manejar **múltiples clientes concurrentes** de forma eficiente.
