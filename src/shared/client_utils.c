@@ -223,3 +223,121 @@ void test_tunnel(int sockfd) {
     }
     print_info("Conexión cerrada por el extremo remoto.");
 }
+
+/**
+ * Realiza el Handshake SOCKS5 (Metodo 0x02) y la Autenticación RFC 1929.
+ */
+int perform_handshake_thread(int sockfd, const char *username, const char *password) {
+    char buf[512];
+
+    // 1. Enviar Hello: VER=5, NMETHODS=1, METHOD=0x02 (Username/Password)
+    char hello[] = { 0x05, 0x01, 0x02 }; 
+    if (send(sockfd, hello, sizeof(hello), 0) != sizeof(hello)) return -1;
+
+    if (recv(sockfd, buf, 2, 0) != 2) return -1;
+
+    // Verificar que el servidor eligió 0x02 (Auth)
+    if (buf[1] != 0x02) {
+        // Si devuelve 0xFF es que no soporta nuestros métodos.
+        // Si devuelve 0x00 es que no requiere auth (pero nosotros forzamos 0x02 arriba).
+        return -1; 
+    }
+
+    // 3. Enviar Credenciales (RFC 1929)
+    // Formato: VER(1) | ULEN | USER | PLEN | PASS
+    int idx = 0;
+    buf[idx++] = 0x01; // Versión de sub-negociación (siempre 1)
+    
+    size_t ulen = strlen(username);
+    if (ulen > 255) return -1;
+    buf[idx++] = (uint8_t)ulen;
+    memcpy(&buf[idx], username, ulen);
+    idx += ulen;
+    
+    size_t plen = strlen(password);
+    if (plen > 255) return -1;
+    buf[idx++] = (uint8_t)plen;
+    memcpy(&buf[idx], password, plen);
+    idx += plen;
+
+    if (send(sockfd, buf, idx, 0) != idx) return -1;
+
+    // 4. Recibir Resultado de Autenticación
+    // Formato: VER(1) | STATUS
+    if (recv(sockfd, buf, 2, 0) != 2) return -1;
+
+    // Status 0x00 significa Éxito
+    if (buf[1] != 0x00) return -1; 
+
+    return 0; // Auth OK
+}
+
+int verify_socks5_reply_thread(int sockfd) {
+    char buf[BUFFER_SIZE];
+    ssize_t n = recv(sockfd, buf, 4, 0); // Leemos header mínimo
+    
+    if (n < 4) return -1; 
+
+    uint8_t rep = buf[1];
+    if (rep != 0x00) {
+        // Error del servidor SOCKS (Connection Refused, etc.)
+        return -1;
+    }
+    
+    // Consumir el resto (BND.ADDR + BND.PORT) para limpiar el socket
+    int to_read = 0;
+    switch (buf[3]) {
+        case 0x01: to_read = 4 + 2; break; // IPv4
+        case 0x03: // Domain
+            if (recv(sockfd, buf, 1, 0) != 1) return -1; // Leer longitud dominio
+            to_read = buf[0] + 2;
+            break;
+        case 0x04: to_read = 16 + 2; break; // IPv6
+        default: return -1;
+    }
+
+    // Leer remanente
+    while (to_read > 0) {
+        n = recv(sockfd, buf, (to_read > sizeof(buf)) ? sizeof(buf) : to_read, 0);
+        if (n <= 0) return -1;
+        to_read -= n;
+    }
+
+    return 0; 
+}
+
+// Reutilizamos tus funciones de request tal cual (asegurando que retornen int)
+int perform_request_ipv4_thread(int sockfd, const char *ip_str, int port) {
+    char buf[BUFFER_SIZE];
+    int idx = 0;
+    buf[idx++] = 0x05; buf[idx++] = 0x01; buf[idx++] = 0x00; buf[idx++] = 0x01; // IPv4
+    
+    if (inet_pton(AF_INET, ip_str, &buf[idx]) <= 0) return -1;
+    idx += 4;
+    
+    uint16_t p = htons(port);
+    memcpy(&buf[idx], &p, 2);
+    idx += 2;
+
+    if (send(sockfd, buf, idx, 0) != idx) return -1;
+    return verify_socks5_reply_thread(sockfd);
+}
+
+int perform_request_domain_thread(int sockfd, const char *domain, int port) {
+    char buf[BUFFER_SIZE];
+    int idx = 0;
+    buf[idx++] = 0x05; buf[idx++] = 0x01; buf[idx++] = 0x00; buf[idx++] = 0x03; // Domain
+    
+    size_t len = strlen(domain);
+    if (len > 255) return -1;
+    buf[idx++] = (uint8_t)len;
+    memcpy(&buf[idx], domain, len);
+    idx += len;
+    
+    uint16_t p = htons(port);
+    memcpy(&buf[idx], &p, 2);
+    idx += 2;
+
+    if (send(sockfd, buf, idx, 0) != idx) return -1;
+    return verify_socks5_reply_thread(sockfd);
+}

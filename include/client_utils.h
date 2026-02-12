@@ -42,4 +42,26 @@ void perform_request_ipv6(int sockfd, const char *ip6_str, int port);
  */
 void test_tunnel(int sockfd);
 
+int verify_socks5_reply_thread(int sockfd);
+
+/**
+ * @brief Realiza el saludo inicial y la autenticación User/Pass (RFC 1929).
+ * @param sockfd Socket conectado al servidor.
+ * @param username Usuario (ej: "admin").
+ * @param password Contraseña (ej: "admin").
+ * Thread Safe
+ */
+int perform_handshake_thread(int sockfd, const char *username, const char *password);
+
+/**
+ * @brief Solicita conexión a una IP IPv4 (ATYP 0x01). Thread Safe
+ */
+int perform_request_ipv4_thread(int sockfd, const char *ip_str, int port);
+
+/**
+ * @brief Solicita conexión a un dominio (FQDN) (ATYP 0x03). Thread Safe
+ */
+int perform_request_domain_thread(int sockfd, const char *domain, int port);
+
+
 #endif
