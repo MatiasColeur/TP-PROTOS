@@ -25,9 +25,6 @@ inline static FILE * get_file_write(const char * file) {
     return get_file(file, "w");
 }
 
-inline static FILE * get_file_read(const char * file) {
-    return get_file(file, "r");
-}
 
 
 static void current_timestamp_iso8601(char *buf, size_t size) {
@@ -42,7 +39,7 @@ static void current_timestamp_iso8601(char *buf, size_t size) {
 
 /*---------- LOGGER FUNCTIONS ----------*/
 
-void init_log() {
+void init_log(void) {
 
     FILE *fr = fopen(BYTES_FILE, "r");
     if (fr != NULL) {

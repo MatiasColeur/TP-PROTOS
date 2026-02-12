@@ -1134,15 +1134,12 @@ static unsigned relay_on_write(struct selector_key *key) {
     socks5_connection_ptr conn = ATTACHMENT(key);
 
     buffer *b_write;
-    int other_fd;
 
     // Determinar buffer a enviar
     if (key->fd == conn->client_fd) {
         b_write  = &conn->remote_read_buf;
-        other_fd = conn->remote_fd;
     } else {
         b_write  = &conn->client_read_buf;
-        other_fd = conn->client_fd;
     }
 
     size_t size;

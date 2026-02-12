@@ -158,7 +158,7 @@ static void ensure_file_exists(const char *filepath) {
  * @brief Inicializa la estructura de directorios y archivos de log.
  * Llamar a esto al inicio del main().
  */
-void init_log_structure() {
+void init_log_structure(void) {
     ensure_directory_exists(LOGS_DIRECTORY);
 
     ensure_file_exists(ACCESS_FILE);
